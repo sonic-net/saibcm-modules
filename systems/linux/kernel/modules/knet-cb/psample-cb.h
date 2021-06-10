@@ -42,7 +42,8 @@ typedef struct {
     struct list_head list;
     struct net_device *dev;
     uint16 id;
-    uint8  port;
+    uint8  port; /* physical port */
+    uint16 spa;  /* JR2: Systerm Port Aggregate */
     uint16 vlan;
     uint16 qnum;
     uint32 sample_rate;
@@ -50,9 +51,9 @@ typedef struct {
 } psample_netif_t;
 
 extern int
-psample_netif_create_cb(int unit, kcom_netif_t *netif, struct net_device *dev);
+psample_netif_create_cb(int unit, kcom_netif_t *netif, uint16 spa, struct net_device *dev);
 
 extern int
-psample_netif_destroy_cb(int unit, kcom_netif_t *netif, struct net_device *dev);
+psample_netif_destroy_cb(int unit, kcom_netif_t *netif, uint16 spa, struct net_device *dev);
 
 #endif /* __PSAMPLE_CB_H__ */

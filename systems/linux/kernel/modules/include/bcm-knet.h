@@ -50,6 +50,8 @@ typedef struct  {
  * Call-back interfaces for other Linux kernel drivers.
  */
 #include <linux/skbuff.h>
+#include <linux/netdevice.h>
+#include <kcom.h>
 
 typedef struct {
     uint32 netif_user_data;
@@ -146,6 +148,32 @@ bkn_hw_tstamp_ioctl_cmd_cb_register(knet_hw_tstamp_ioctl_cmd_cb_f hw_tstamp_ioct
 
 extern int
 bkn_hw_tstamp_ioctl_cmd_cb_unregister(knet_hw_tstamp_ioctl_cmd_cb_f hw_tstamp_ioctl_cmd_cb);
+
+typedef struct {
+    uint8 cmic_type;
+    uint8 dcb_type;
+    uint8 dcb_size;
+    uint8 pkt_hdr_size;
+    uint32 cdma_channels;
+} knet_hw_info_t;
+
+extern int
+bkn_hw_info_get(int unit, knet_hw_info_t *hw_info);
+
+typedef int
+(*knet_netif_cb_f)(int unit, kcom_netif_t *netif, uint16 spa, struct net_device *dev);
+
+extern int
+bkn_netif_create_cb_register(knet_netif_cb_f netif_cb);
+
+extern int
+bkn_netif_create_cb_unregister(knet_netif_cb_f netif_cb);
+
+extern int
+bkn_netif_destroy_cb_register(knet_netif_cb_f netif_cb);
+
+extern int
+bkn_netif_destroy_cb_unregister(knet_netif_cb_f netif_cb);
 
 #endif
 

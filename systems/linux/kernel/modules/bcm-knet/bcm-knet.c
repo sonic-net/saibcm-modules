@@ -166,7 +166,11 @@ MODULE_PARM_DESC(basedev_suspend,
 /*
  * Force to add one layer of VLAN tag to untagged packets on Dune devices
  */
+#if defined(SAI_FIXUP) && defined(BCM_DNX_SUPPORT)  /* SONIC-16195 CS9129167 - Change the default to NOT add tag */
+static int force_tagged = 0;
+#else
 static int force_tagged = 1;
+#endif
 LKM_MOD_PARAM(force_tagged, "i", int, 0);
 MODULE_PARM_DESC(force_tagged,
 "Always tagged with VLAN tag with spceified VID or VSI(default 1)");
@@ -544,6 +548,52 @@ typedef struct bkn_dcb_chain_s {
     uint32_t *dcb_mem;
     uint64_t dcb_dma;
 } bkn_dcb_chain_t;
+
+/** DNX Meta data */
+typedef struct dnx_meta_data_s
+{
+#ifdef LE_HOST
+    uint32 trap_qualifier:16,   /* Internal.Trap-Qualifier */
+        trap_id:16;             /* Internal.Trap-Code */
+#else
+    uint32 trap_id:16,          /* Internal.Trap-Code */
+        trap_qualifier:16;      /* Internal.Trap-Qualifier */
+#endif
+
+#ifdef LE_HOST
+    uint32 forward_domain:16,   /* Bridging: VSI, Routing: VRF */
+        spa:16;                 /* FTMH.Source-system-port-aggregate */
+#else
+    uint32 spa:16,              /* FTMH.Source-system-port-aggregate */
+        forward_domain:16;      /* Bridging: VSI, Routing: VRF */
+#endif
+
+#ifdef LE_HOST
+    uint32 reserve:30, action_type:2;   /* Internal.TM-action-type */
+#else
+    uint32 action_type:2,       /* Internal.TM-action-type */
+        reserve:30;
+#endif
+
+/** Last DW of DCB */
+#ifdef  LE_HOST
+    uint32 count:16,            /* Transferred byte count */
+        end:1,                  /* End bit (RX) */
+        start:1,                /* Start bit (RX) */
+        error:1,                /* Cell Error (RX) */
+        ecc_error:1,            /* packet ECC Error (RX) */
+    :   11,                     /* Reserved */
+        done:1;                 /* Descriptor Done */
+#else
+    uint32 done:1,              /* Descriptor Done */
+    :   11,                     /* Reserved */
+        ecc_error:1,            /* Packet ECC Error (RX) */
+        error:1,                /* Cell Error (RX) */
+        start:1,                /* Start bit (RX) */
+        end:1,                  /* End bit (RX) */
+        count:16;               /* Transferred byte count */
+#endif
+} dnx_meta_data_t;
 
 #define MAX_TX_DCBS 64
 #define MAX_RX_DCBS 64
@@ -939,6 +989,7 @@ typedef struct bkn_priv_s {
     int rx_hwts;                /* HW timestamp for Rx */
     int phys_port;
     uint8_t svtag[KCOM_NETIF_SVTAG_SIZE];
+    struct ethtool_link_settings link_settings;
 } bkn_priv_t;
 
 typedef struct bkn_filter_s {
@@ -986,7 +1037,8 @@ static knet_hw_tstamp_tx_meta_get_cb_f knet_hw_tstamp_tx_meta_get_cb = NULL;
 static knet_hw_tstamp_ptp_clock_index_cb_f knet_hw_tstamp_ptp_clock_index_cb = NULL;
 static knet_hw_tstamp_rx_time_upscale_cb_f knet_hw_tstamp_rx_time_upscale_cb = NULL;
 static knet_hw_tstamp_ioctl_cmd_cb_f knet_hw_tstamp_ioctl_cmd_cb = NULL;
-
+static knet_netif_cb_f knet_netif_create_cb = NULL;
+static knet_netif_cb_f knet_netif_destroy_cb = NULL;
 /*
  * Thread management
  */
@@ -6412,10 +6464,42 @@ bkn_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 }
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
+static int bkn_get_link_ksettings(struct net_device *netdev,
+                                  struct ethtool_link_ksettings *cmd)
+{
+    bkn_priv_t *priv = netdev_priv(netdev);
+
+    /* only speed info now, can enhance later */
+    if (priv) {
+        cmd->base.speed  = priv->link_settings.speed;
+        cmd->base.duplex = priv->link_settings.duplex;
+    }
+    return 0;
+}
+
+static int bkn_set_link_ksettings(struct net_device *netdev,
+                                  const struct ethtool_link_ksettings *cmd)
+{
+    bkn_priv_t *priv = netdev_priv(netdev);
+
+    /* only speed info now, can enhance later */
+    if (priv) {
+        priv->link_settings.speed  = cmd->base.speed;
+        priv->link_settings.duplex = cmd->base.speed? DUPLEX_FULL : 0;
+    }
+    return 0;
+}
+#endif
+
 static const struct ethtool_ops bkn_ethtool_ops = {
     .get_drvinfo        = bkn_get_drvinfo,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
     .get_ts_info        = bkn_get_ts_info,
+#endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
+    .get_link_ksettings = bkn_get_link_ksettings,
+    .set_link_ksettings = bkn_set_link_ksettings,
 #endif
 };
 
@@ -6468,7 +6552,9 @@ bkn_init_ndev(u8 *mac, char *name)
         strncpy(dev->name, name, IFNAMSIZ-1);
     }
 
+#if defined(CONFIG_NET_NS)
     bkn_dev_net_set(dev, current->nsproxy->net_ns);
+#endif
 
     /* Register the kernel Ethernet device */
     if (register_netdev(dev)) {
@@ -8026,6 +8112,7 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
         priv->port = kmsg->netif.port;
         priv->phys_port = kmsg->netif.phys_port;
         priv->qnum = kmsg->netif.qnum;
+        memset(&(priv->link_settings), 0, sizeof(struct ethtool_link_settings));;
     } else {
         if (device_is_sand(sinfo) && (priv->type == KCOM_NETIF_T_VLAN)) {
             /* PTCH.SSPA */
@@ -8094,7 +8181,6 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
         }
     }
 
-    spin_unlock_irqrestore(&sinfo->lock, flags);
 
     DBG_VERB(("Assigned ID %d to Ethernet device %s\n",
               priv->id, dev->name));
@@ -8102,6 +8188,15 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
     kmsg->netif.id = priv->id;
     memcpy(kmsg->netif.macaddr, dev->dev_addr, 6);
     memcpy(kmsg->netif.name, dev->name, KCOM_NETIF_NAME_MAX - 1);
+    if (!device_is_sand(sinfo)) {
+        if (knet_netif_create_cb != NULL) {
+            int retv = knet_netif_create_cb(kmsg->hdr.unit, &(kmsg->netif), kmsg->netif.port, dev);
+            if (retv) { 
+                gprintk("Warning: knet_netif_create_cb() returned %d for netif '%s'\n", retv, dev->name);
+            }
+        }
+    }
+    spin_unlock_irqrestore(&sinfo->lock, flags);
 
     if (device_is_sand(sinfo)) {
         int idx = 0;
@@ -8152,7 +8247,14 @@ bkn_knet_netif_destroy(kcom_msg_netif_destroy_t *kmsg, int len)
         kmsg->hdr.status = KCOM_E_NOT_FOUND;
         return sizeof(kcom_msg_hdr_t);
     }
-
+    if (!device_is_sand(sinfo)) {
+        if (knet_netif_destroy_cb != NULL) {
+            kcom_netif_t netif;
+            memset(&netif, 0, sizeof(kcom_netif_t));
+            netif.id = priv->id;
+            knet_netif_destroy_cb(kmsg->hdr.unit, &netif, 0, priv->dev);
+        }
+    }
     list_del(&priv->list);
 
     if (priv->id < sinfo->ndev_max) {
@@ -8351,10 +8453,42 @@ bkn_knet_filter_create(kcom_msg_filter_create_t *kmsg, int len)
 
     kmsg->filter.id = filter->kf.id;
 
+    if (device_is_dnx(sinfo)) {
+        int wsize;
+        kcom_netif_t netif;
+        bkn_priv_t *priv;
+        dnx_meta_data_t *meta_data;
+
+        wsize = BYTES2WORDS(filter->kf.oob_data_size + filter->kf.pkt_data_size);
+        if (wsize == 4)
+        {
+            meta_data = (dnx_meta_data_t *)filter->kf.data.b;
+            if (meta_data->spa != 0)
+            {
+                memset(&netif, 0, sizeof(netif));
+                priv = bkn_netif_lookup(sinfo, kmsg->filter.dest_id);
+                if (priv != NULL) {
+                    netif.id = priv->id;
+                    netif.port = priv->port;
+                    netif.vlan = priv->vlan;
+                    netif.qnum = priv->qnum;
+                    if (knet_netif_create_cb != NULL) {
+                        int retv = knet_netif_create_cb(kmsg->hdr.unit, &netif, meta_data->spa, priv->dev);
+                        if (retv) { 
+                            gprintk("%s: returned %d for port:%x spa:%x netif '%s'\n",
+                            __func__, retv, netif.port, meta_data->spa, priv->dev->name);
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
     spin_unlock_irqrestore(&sinfo->lock, flags);
 
-    DBG_VERB(("Created filter ID %d (%s).\n",
-              filter->kf.id, filter->kf.desc));
+    DBG_VERB(("Created filter ID %d (%s) for device:%d.\n",
+              filter->kf.id, filter->kf.desc, kmsg->filter.dest_id));
     if (device_is_sand(sinfo)) {
         int idx, wsize;
         wsize = BYTES2WORDS(filter->kf.oob_data_size + filter->kf.pkt_data_size);
@@ -8415,6 +8549,25 @@ bkn_knet_filter_destroy(kcom_msg_filter_destroy_t *kmsg, int len)
         cfg_api_unlock(sinfo, &flags);
         kmsg->hdr.status = KCOM_E_NOT_FOUND;
         return sizeof(kcom_msg_hdr_t);
+    }
+    else
+    {
+        if (device_is_dnx(sinfo)) {
+            kcom_netif_t netif;
+            bkn_priv_t *priv;
+            memset(&netif, 0, sizeof(netif));
+            priv = bkn_netif_lookup(sinfo, filter->kf.dest_id);
+            if (priv != NULL) {
+                netif.id = priv->id;
+                if (knet_netif_create_cb != NULL) {
+                    int retv = knet_netif_destroy_cb(kmsg->hdr.unit, &netif, 0, priv->dev);
+                    if (retv) { 
+                        gprintk("%s returned %d for id:%d netif '%s'\n",
+                                __func__, retv, netif.id, priv->dev->name);
+                    }
+                }
+            }
+        }
     }
 
     list_del(&filter->list);
@@ -9096,6 +9249,68 @@ gmodule_get(void)
 }
 
 /*
+ * Get DCB type and other HW info
+ */
+int
+bkn_hw_info_get(int unit, knet_hw_info_t *hw_info)
+{
+    bkn_switch_info_t *sinfo;
+    sinfo = bkn_sinfo_from_unit(unit);
+    if (sinfo == NULL) {
+        gprintk("Warning: unknown unit: %d\n", unit);
+        return (-1);
+    }
+
+    hw_info->cmic_type = sinfo->cmic_type;
+    hw_info->dcb_type = sinfo->dcb_type;
+    hw_info->dcb_size = WORDS2BYTES(sinfo->dcb_wsize);
+    hw_info->pkt_hdr_size = sinfo->pkt_hdr_size;
+    hw_info->cdma_channels = sinfo->cdma_channels;
+
+    return (0);
+}
+
+int
+bkn_netif_create_cb_register(knet_netif_cb_f netif_cb)
+{
+    if (knet_netif_create_cb != NULL) {
+        return -1;
+    }
+    knet_netif_create_cb = netif_cb;
+    return 0;
+}
+
+int
+bkn_netif_create_cb_unregister(knet_netif_cb_f netif_cb)
+{
+    if (netif_cb != NULL && knet_netif_create_cb != netif_cb) {
+        return -1;
+    }
+    knet_netif_create_cb = NULL;
+    return 0;
+}
+
+int
+bkn_netif_destroy_cb_register(knet_netif_cb_f netif_cb)
+{
+    if (knet_netif_destroy_cb != NULL) {
+        return -1;
+    }
+    knet_netif_destroy_cb = netif_cb;
+    return 0;
+}
+
+int
+bkn_netif_destroy_cb_unregister(knet_netif_cb_f netif_cb)
+{
+    if (netif_cb != NULL && knet_netif_destroy_cb != netif_cb) {
+        return -1;
+    }
+    knet_netif_destroy_cb = NULL;
+    return 0;
+}
+
+/*
  * Call-back interfaces for other Linux kernel drivers.
  *
  * The Rx call-back allows an external module to modify SKB contents
@@ -9337,3 +9552,8 @@ LKM_EXPORT_SYM(bkn_hw_tstamp_rx_time_upscale_cb_register);
 LKM_EXPORT_SYM(bkn_hw_tstamp_rx_time_upscale_cb_unregister);
 LKM_EXPORT_SYM(bkn_hw_tstamp_ioctl_cmd_cb_register);
 LKM_EXPORT_SYM(bkn_hw_tstamp_ioctl_cmd_cb_unregister);
+LKM_EXPORT_SYM(bkn_hw_info_get);
+LKM_EXPORT_SYM(bkn_netif_create_cb_register);
+LKM_EXPORT_SYM(bkn_netif_create_cb_unregister);
+LKM_EXPORT_SYM(bkn_netif_destroy_cb_register);
+LKM_EXPORT_SYM(bkn_netif_destroy_cb_unregister);

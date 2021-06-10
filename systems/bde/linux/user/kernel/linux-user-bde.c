@@ -1319,13 +1319,22 @@ _dma_resource_get(unsigned inst_id, phys_addr_t *cpu_pbase, phys_addr_t *dma_pba
     unsigned int dma_size = 0, dma_offset = 0;
     bde_inst_resource_t *res;
 
+#if defined(SAI_FIXUP) /* SDK-256111 */
+    spin_lock(&bde_resource_lock);
+#endif
     if (inst_id >= user_bde->num_devices(BDE_ALL_DEVICES)) {
         gprintk("ERROR: requested DMA resources for an instance number out of range: %u\n", inst_id);
+#if defined(SAI_FIXUP) /* SDK-256111 */
+    spin_unlock(&bde_resource_lock);
+#endif
         return -1;
     }
     res = &_bde_inst_resource[inst_id];
     dma_size = res->dma_size;
     dma_offset = res->dma_offset;
+#if defined(SAI_FIXUP) /* SDK-256111 */
+    spin_unlock(&bde_resource_lock);
+#endif
 
     *cpu_pbase = _dma_pool.cpu_pbase + dma_offset * ONE_MB;
     *dma_pbase = _dma_pool.dma_pbase + dma_offset * ONE_MB;
