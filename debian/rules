@@ -31,7 +31,7 @@ sname:=opennsl
 ### taken from /usr/share/kernel-package/sample.module.rules
 
 # prefix of the target package name
-PACKAGE=opennsl-modules-dnx
+PACKAGE=opennsl-modules
 # modifieable for experiments or debugging m-a
 MA_DIR ?= /usr/share/modass
 KVERSION ?= 4.19.0-12-2-amd64
