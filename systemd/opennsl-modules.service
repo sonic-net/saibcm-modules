@@ -1,6 +1,6 @@
 [Unit]
 Description=Opennsl kernel modules init
-After=local-fs.target
+After=rc-local.service
 Before=syncd.service
 
 [Service]
