@@ -6930,6 +6930,7 @@ bkn_proc_link_write(struct file *file, const char *buf,
     return count;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations bkn_proc_link_file_ops = {
     owner:      THIS_MODULE,
     open:       bkn_proc_link_open,
@@ -6938,6 +6939,15 @@ struct file_operations bkn_proc_link_file_ops = {
     write:      bkn_proc_link_write,
     release:    single_release,
 };
+#else
+struct proc_ops bkn_proc_link_file_ops = {
+    proc_open:       bkn_proc_link_open,
+    proc_read:       seq_read,
+    proc_lseek:     seq_lseek,
+    proc_write:      bkn_proc_link_write,
+    proc_release:    single_release,
+};
+#endif
 
 /*
  * Device Rate Control Proc Read Entry
@@ -7040,6 +7050,7 @@ bkn_proc_rate_write(struct file *file, const char *buf,
     return count;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations bkn_proc_rate_file_ops = {
     owner:      THIS_MODULE,
     open:       bkn_proc_rate_open,
@@ -7048,6 +7059,15 @@ struct file_operations bkn_proc_rate_file_ops = {
     write:      bkn_proc_rate_write,
     release:    single_release,
 };
+#else
+struct proc_ops bkn_proc_rate_file_ops = {
+    proc_open:       bkn_proc_rate_open,
+    proc_read:       seq_read,
+    proc_lseek:     seq_lseek,
+    proc_write:      bkn_proc_rate_write,
+    proc_release:    single_release,
+};
+#endif
 
 /*
  * Driver DMA Proc Entry
@@ -7290,6 +7310,7 @@ bkn_seq_dma_open(struct inode *inode, struct file *file)
     return seq_open(file, &bkn_seq_dma_ops);
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 static struct file_operations bkn_seq_dma_file_ops = {
     .owner   = THIS_MODULE,
     .open    = bkn_seq_dma_open,
@@ -7297,6 +7318,14 @@ static struct file_operations bkn_seq_dma_file_ops = {
     .llseek  = seq_lseek,
     .release = seq_release
 };
+#else
+static struct proc_ops bkn_seq_dma_file_ops = {
+    .proc_open    = bkn_seq_dma_open,
+    .proc_read    = seq_read,
+    .proc_lseek  = seq_lseek,
+    .proc_release = seq_release
+};
+#endif
 
 /*
  * Device Debug Control Proc Write Entry
