@@ -36,7 +36,7 @@ ngbde_iio_map(void *devh, phys_addr_t addr, phys_addr_t size)
         ngbde_iio_unmap(devh);
     }
 
-    sd->iio_mem = ioremap_nocache(addr, size);
+    sd->iio_mem = ioremap(addr, size);
 
     if (sd->iio_mem) {
         /* Save mapped resources */
@@ -106,7 +106,7 @@ ngbde_paxb_map(void *devh, phys_addr_t addr, phys_addr_t size)
         iounmap(sd->paxb_mem);
     }
 
-    sd->paxb_mem = ioremap_nocache(addr, size);
+    sd->paxb_mem = ioremap(addr, size);
 
     if (sd->paxb_mem) {
         /* Save mapped resources */
