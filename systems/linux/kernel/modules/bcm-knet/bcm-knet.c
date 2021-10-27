@@ -6800,6 +6800,7 @@ bkn_init_ndev(u8 *mac, char *name)
         dev->mtu = rx_buffer_size;
     }
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0))
+    dev->min_mtu = 68;
     dev->max_mtu = rx_buffer_size;
 #endif
 
