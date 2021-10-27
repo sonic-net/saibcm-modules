@@ -6534,6 +6534,7 @@ bkn_init_ndev(u8 *mac, char *name)
 
     /* SAI_FIXUP SDK--255753 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0))
+    dev->min_mtu = 68;
     dev->max_mtu = rx_buffer_size;
 #endif
 
