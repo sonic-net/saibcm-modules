@@ -7829,7 +7829,7 @@ cfg_api_lock(bkn_switch_info_t *sinfo, unsigned long *flags)
     spin_lock_irqsave(&sinfo->lock, *flags);
     while (sinfo->cfg_api_locked) {
         spin_unlock_irqrestore(&sinfo->lock, *flags);
-        while (sinfo->cfg_api_locked);
+        while (sinfo->cfg_api_locked) { schedule(); } /* SDK-268597 */
         spin_lock_irqsave(&sinfo->lock, *flags);
     }
 }
