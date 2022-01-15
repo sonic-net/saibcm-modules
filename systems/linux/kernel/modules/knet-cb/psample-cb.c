@@ -658,13 +658,13 @@ psample_proc_rate_write(struct file *file, const char *buf,
     return count;
 }
 
-struct file_operations psample_proc_rate_file_ops = {
-    owner:      THIS_MODULE,
-    open:       psample_proc_rate_open,
-    read:       seq_read,
-    llseek:     seq_lseek,
-    write:      psample_proc_rate_write,
-    release:    single_release,
+struct proc_ops psample_proc_rate_file_ops = {
+    PROC_OWNER(THIS_MODULE)
+    .proc_open =      psample_proc_rate_open,
+    .proc_read =      seq_read,
+    .proc_lseek =     seq_lseek,
+    .proc_write =     psample_proc_rate_write,
+    .proc_release =   single_release,
 };
 
 /*
@@ -757,13 +757,13 @@ psample_proc_size_write(struct file *file, const char *buf,
     return count;
 }
 
-struct file_operations psample_proc_size_file_ops = {
-    owner:      THIS_MODULE,
-    open:       psample_proc_size_open,
-    read:       seq_read,
-    llseek:     seq_lseek,
-    write:      psample_proc_size_write,
-    release:    single_release,
+struct proc_ops psample_proc_size_file_ops = {
+    PROC_OWNER(THIS_MODULE)
+    .proc_open =      psample_proc_size_open,
+    .proc_read =      seq_read,
+    .proc_lseek =     seq_lseek,
+    .proc_write =     psample_proc_size_write,
+    .proc_release =   single_release,
 };
 
 static int
@@ -805,13 +805,13 @@ psample_proc_stats_write(struct file *file, const char *buf,
 
     return count;
 }
-struct file_operations psample_proc_stats_file_ops = {
-    owner:      THIS_MODULE,
-    open:       psample_proc_stats_open,
-    read:       seq_read,
-    llseek:     seq_lseek,
-    write:      psample_proc_stats_write,
-    release:    single_release,
+struct proc_ops psample_proc_stats_file_ops = {
+    PROC_OWNER(THIS_MODULE)
+    .proc_open =      psample_proc_stats_open,
+    .proc_read =      seq_read,
+    .proc_lseek =     seq_lseek,
+    .proc_write =     psample_proc_stats_write,
+    .proc_release =   single_release,
 };
 
 int psample_cleanup(void)
@@ -827,13 +827,16 @@ int psample_cleanup(void)
 int psample_init(void)
 {
     #define PROCFS_MAX_PATH 1024
+    #define KNETCB_PROCFS_MAX_PATH 30 
+
+    char knetcb_procfs_path[KNETCB_PROCFS_MAX_PATH];
     char psample_procfs_path[PROCFS_MAX_PATH];
     struct proc_dir_entry *entry;
 
     /* create procfs for psample */
-    snprintf(psample_procfs_path, PROCFS_MAX_PATH, "bcm/knet-cb");
-    proc_mkdir(psample_procfs_path, NULL);
-    snprintf(psample_procfs_path, PROCFS_MAX_PATH, "%s/%s", psample_procfs_path, PSAMPLE_CB_NAME);
+    snprintf(knetcb_procfs_path, KNETCB_PROCFS_MAX_PATH, "bcm/knet-cb");
+    proc_mkdir(knetcb_procfs_path, NULL);
+    snprintf(psample_procfs_path, PROCFS_MAX_PATH, "%s/%s", knetcb_procfs_path, PSAMPLE_CB_NAME);
     psample_proc_root = proc_mkdir(psample_procfs_path, NULL);
 
     /* create procfs for psample stats */

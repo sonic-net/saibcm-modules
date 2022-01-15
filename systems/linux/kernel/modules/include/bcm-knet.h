@@ -50,8 +50,6 @@ typedef struct  {
  * Call-back interfaces for other Linux kernel drivers.
  */
 #include <linux/skbuff.h>
-#include <linux/netdevice.h>
-#include <kcom.h>
 
 typedef struct {
     uint32 netif_user_data;
