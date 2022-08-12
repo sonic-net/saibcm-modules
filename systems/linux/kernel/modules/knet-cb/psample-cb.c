@@ -415,6 +415,7 @@ psample_filter_cb(uint8_t * pkt, int size, int dev_no, void *pkt_meta,
     struct sk_buff skb;
     int rv = 0;
     static int info_get = 0;
+    struct psample_metadata md = {0};
 
     if (!info_get) {
         rv = psample_info_get (dev_no, &g_psample_info);
@@ -458,12 +459,14 @@ psample_filter_cb(uint8_t * pkt, int size, int dev_no, void *pkt_meta,
 
         PSAMPLE_CB_DBG_PRINT("%s: psample_sample_packet - group 0x%x, trunc_size %d, src_ifdx %d, dst_ifdx %d, sample_rate %d\n",
                 __func__, group->group_num, meta.trunc_size, meta.src_ifindex, meta.dst_ifindex, meta.sample_rate);
+        
+        md.trunc_size = meta.trunc_size;
+        md.in_ifindex = meta.src_ifindex;
+        md.out_ifindex = meta.dst_ifindex;
         psample_sample_packet(group, 
                               &skb, 
-                              meta.trunc_size,
-                              meta.src_ifindex,
-                              meta.dst_ifindex,
-                              meta.sample_rate);
+                              meta.sample_rate,
+                              &md);
 
         g_psample_stats.pkts_f_psample_mod++;
     } else {

@@ -54,10 +54,7 @@ function load_kernel_modules()
 
     modprobe linux-kernel-bde dmasize=$dmasize maxpayload=128 debug=4 dma_debug=1 usemsi=$usemsi
     modprobe linux-user-bde
-
-    # Using insmod with absolute path for psample to make sure bcm psample is loaded.
-    # There is a different psample.ko module getting created at net/psample/psample.ko 
-    insmod /lib/modules/$(uname -r)/extra/psample.ko
+    modprobe psample
 
     modprobe linux-bcm-knet use_rx_skb=1 rx_buffer_size=9238 debug=0x5020 default_mtu=9100
     modprobe linux-knet-cb
@@ -66,7 +63,7 @@ function load_kernel_modules()
 
 function remove_kernel_modules()
 {
-    rmmod psample.ko
+    rmmod psample
     rmmod linux-knet-cb
     rmmod linux-bcm-knet
     rmmod linux-user-bde
