@@ -4,7 +4,7 @@
  *
  */
 /*
- * $Copyright: Copyright 2018-2021 Broadcom. All rights reserved.
+ * $Copyright: Copyright 2018-2023 Broadcom. All rights reserved.
  * The term 'Broadcom' refers to Broadcom Inc. and/or its subsidiaries.
  * 
  * This program is free software; you can redistribute it and/or
@@ -49,6 +49,7 @@
 #include "ngknet_main.h"
 #include "ngknet_extra.h"
 #include "ngknet_callback.h"
+#include "ngknet_ptp.h"
 
 /*! Defalut Rx tick for Rx rate limit control. */
 #define NGKNET_EXTRA_RATE_LIMIT_DEFAULT_RX_TICK 10
@@ -248,22 +249,25 @@ ngknet_filter_get_next(struct ngknet_dev *dev, ngknet_filter_t *filter)
 }
 
 int
-ngknet_rx_pkt_filter(struct ngknet_dev *dev, struct sk_buff *skb, struct net_device **ndev,
-                     struct net_device **mndev, struct sk_buff **mskb)
+ngknet_rx_pkt_filter(struct ngknet_dev *dev,
+                     struct sk_buff **oskb, struct net_device **ndev,
+                     struct sk_buff **mskb, struct net_device **mndev)
 {
-    struct pkt_buf *pkb = (struct pkt_buf *)skb->data;
+    struct sk_buff *skb = *oskb, *mirror_skb = NULL;
     struct net_device *dest_ndev = NULL, *mirror_ndev = NULL;
-    struct sk_buff *mirror_skb = NULL;
     struct ngknet_private *priv = NULL;
     struct filt_ctrl *fc = NULL;
     struct list_head *list = NULL;
     ngknet_filter_t scratch, *filt = NULL, *filt_cb = NULL;
+    struct pkt_buf *pkb = (struct pkt_buf *)skb->data;
     uint8_t *oob = &pkb->data, *data = NULL;
     uint16_t tpid;
     unsigned long flags;
     int wsize;
     int chan_id;
     int rv, idx, match = 0, match_cb = 0;
+    int eth_offset = 0;
+    int cust_hdr_len = 0;
 
     rv = bcmcnet_pdma_dev_queue_to_chan(&dev->pdma_dev, pkb->pkh.queue_id,
                                         PDMA_Q_RX, &chan_id);
@@ -285,7 +289,7 @@ ngknet_rx_pkt_filter(struct ngknet_dev *dev, struct sk_buff *skb, struct net_dev
 
     if (list_empty(&dev->filt_list)) {
         spin_unlock_irqrestore(&dev->lock, flags);
-        return SHR_E_NONE;
+        return SHR_E_NO_HANDLER;
     }
 
     list_for_each(list, &dev->filt_list) {
@@ -330,17 +334,24 @@ ngknet_rx_pkt_filter(struct ngknet_dev *dev, struct sk_buff *skb, struct net_dev
                 spin_unlock_irqrestore(&dev->lock, flags);
                 return SHR_E_UNAVAIL;
             }
-            cbd->dev_no = dev->dev_no;
-            cbd->dev_id = dev->pdma_dev.dev_id;
-            cbd->type_str = dev->type_str;
+            cbd->dinfo = &dev->dev_info;
             cbd->pmd = skb->data + PKT_HDR_SIZE;
             cbd->pmd_len = pkh->meta_len;
             cbd->pkt_len = pkh->data_len;
             cbd->filt = filt;
             skb = dev->cbc->filter_cb(skb, &filt);
-            if (!skb || !filt) {
+            if (!skb) {
+                *oskb = NULL;
                 spin_unlock_irqrestore(&dev->lock, flags);
-                return SHR_E_UNAVAIL;
+                return SHR_E_NONE;
+            }
+            if (skb != *oskb) {
+                *oskb = skb;
+                pkb = (struct pkt_buf *)skb->data;
+            }
+            if (!filt) {
+                spin_unlock_irqrestore(&dev->lock, flags);
+                return SHR_E_NO_HANDLER;
             }
         }
         switch (filt->dest_type) {
@@ -363,37 +374,41 @@ ngknet_rx_pkt_filter(struct ngknet_dev *dev, struct sk_buff *skb, struct net_dev
         case NGKNET_FILTER_DEST_T_VNET:
             pkb->pkh.attrs |= PDMA_RX_TO_VNET;
             spin_unlock_irqrestore(&dev->lock, flags);
-            return SHR_E_NO_HANDLER;
+            return SHR_E_NONE;
         case NGKNET_FILTER_DEST_T_NULL:
         default:
             spin_unlock_irqrestore(&dev->lock, flags);
-            return SHR_E_UNAVAIL;
+            return SHR_E_NO_HANDLER;
         }
     }
 
     spin_unlock_irqrestore(&dev->lock, flags);
 
     if (!dest_ndev) {
-        return SHR_E_NONE;
+        return SHR_E_NO_HANDLER;
     } else {
         *ndev = dest_ndev;
     }
 
+    /* PTP Rx Pre processing */
+    if (priv->hwts_rx_filter) {
+        ngknet_ptp_rx_pre_process(dest_ndev, skb, &cust_hdr_len);
+    }
+
     if (filt->flags & NGKNET_FILTER_F_STRIP_TAG) {
         pkb->pkh.attrs |= PDMA_RX_STRIP_TAG;
-        data = skb->data + PKT_HDR_SIZE + pkb->pkh.meta_len;
+        eth_offset = PKT_HDR_SIZE + pkb->pkh.meta_len + cust_hdr_len;
+        data = skb->data + eth_offset;
         tpid = data[12] << 8 | data[13];
         if (tpid == ETH_P_8021Q || tpid == ETH_P_8021AD) {
             pkb->pkh.data_len -= VLAN_HLEN;
-            memmove(skb->data + VLAN_HLEN, skb->data,
-                    PKT_HDR_SIZE + pkb->pkh.meta_len + 2 * ETH_ALEN);
+            memmove(skb->data + VLAN_HLEN, skb->data, eth_offset + 2 * ETH_ALEN);
             skb_pull(skb, VLAN_HLEN);
         }
     }
 
     if (dev->cbc->rx_cb) {
         NGKNET_SKB_CB(skb)->filt = filt;
-        
         /* Add callback filter if matched */
         if (priv) {
             priv->filt_cb = match_cb? filt_cb : NULL;
@@ -444,7 +459,7 @@ ngknet_rl_process(timer_context_t data)
         dev = &rc->devs[idx];
         if (rc->dev_active[idx] && rc->dev_paused[idx]) {
             bcmcnet_pdma_dev_rx_resume(&dev->pdma_dev);
-            rl_ctrl.dev_paused[dev->dev_no] = 0;
+            rl_ctrl.dev_paused[dev->dev_info.dev_no] = 0;
         }
     }
     spin_unlock_irqrestore(&rc->lock, flags);
@@ -481,7 +496,7 @@ ngknet_rx_rate_limit_start(struct ngknet_dev *dev)
     unsigned long flags;
 
     spin_lock_irqsave(&rl_ctrl.lock, flags);
-    rl_ctrl.dev_active[dev->dev_no] = 1;
+    rl_ctrl.dev_active[dev->dev_info.dev_no] = 1;
     spin_unlock_irqrestore(&rl_ctrl.lock, flags);
 
     if (!rl_ctrl.started) {
@@ -497,7 +512,7 @@ ngknet_rx_rate_limit_stop(struct ngknet_dev *dev)
     unsigned long flags;
 
     spin_lock_irqsave(&rl_ctrl.lock, flags);
-    rl_ctrl.dev_active[dev->dev_no] = 0;
+    rl_ctrl.dev_active[dev->dev_info.dev_no] = 0;
     spin_unlock_irqrestore(&rl_ctrl.lock, flags);
 }
 
@@ -515,12 +530,13 @@ ngknet_rx_rate_limit(struct ngknet_dev *dev, int limit)
 
     spin_lock_irqsave(&rl_ctrl.lock, flags);
     if ((++rl_ctrl.rx_pkts + rl_ctrl.rx_overruns > limit / rl_ctrl.rx_ticks) &&
-        !rl_ctrl.dev_paused[dev->dev_no] && rl_ctrl.dev_active[dev->dev_no]) {
-        rl_ctrl.dev_paused[dev->dev_no] = 1;
+        !rl_ctrl.dev_paused[dev->dev_info.dev_no] &&
+        rl_ctrl.dev_active[dev->dev_info.dev_no]) {
+        rl_ctrl.dev_paused[dev->dev_info.dev_no] = 1;
         rl_ctrl.rx_overruns = 0;
         bcmcnet_pdma_dev_rx_suspend(&dev->pdma_dev);
     }
-    if (rl_ctrl.dev_paused[dev->dev_no]) {
+    if (rl_ctrl.dev_paused[dev->dev_info.dev_no]) {
         rl_ctrl.rx_overruns++;
     }
     spin_unlock_irqrestore(&rl_ctrl.lock, flags);

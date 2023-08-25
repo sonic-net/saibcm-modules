@@ -141,12 +141,9 @@ all_targets +=$(LOCAL_TARGETS)
 endif
 endif
 
+
 ifdef BUILD_PSAMPLE
 ADD_TO_CFLAGS += -DPSAMPLE_SUPPORT
-ifeq ($(NO_LOCAL_TARGETS),)
-LOCAL_TARGETS +=$(patsubst %,../$(platform)/%,$(PSAMPLE_LOCAL))
-all_targets +=$(LOCAL_TARGETS)
-endif
 endif
 
 ADD_TO_CFLAGS += -I$(SDK)/systems/linux/kernel/modules/include
@@ -169,10 +166,8 @@ ADD_TO_CFLAGS += -I$(SDK)/systems/bde/linux/include
 ADD_TO_CFLAGS += -DPROXY_SUPPORT=0
 
 CFLAGS += $(ADD_TO_CFLAGS)
-
 #SAI_FIXUP
 CFLAGS:=$(filter-out -fPIC, $(CFLAGS))
-
 kernel_modules:
 	$(MAKE) -C $(SDK)/systems/bde/linux/kernel kernel_version=$(kernel_version)
 	$(MAKE) -C $(SDK)/systems/bde/linux/user/kernel kernel_version=$(kernel_version)

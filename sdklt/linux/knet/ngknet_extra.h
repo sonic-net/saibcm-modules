@@ -4,7 +4,7 @@
  *
  */
 /*
- * $Copyright: Copyright 2018-2021 Broadcom. All rights reserved.
+ * $Copyright: Copyright 2018-2023 Broadcom. All rights reserved.
  * The term 'Broadcom' refers to Broadcom Inc. and/or its subsidiaries.
  * 
  * This program is free software; you can redistribute it and/or
@@ -104,16 +104,18 @@ ngknet_filter_get_next(struct ngknet_dev *dev, ngknet_filter_t *filter);
  * \brief Filter packet.
  *
  * \param [in] dev Device structure point.
- * \param [in] skb Rx packet SKB.
- * \param [out] mndev Mirror network interface.
- * \param [out] mskb Mirror Rx packet SKB.
+ * \param [in] oskb Rx packet SKB.
+ * \param [out] ndev Network interface.
+ * \param [out] mskb Mirrored Rx packet SKB.
+ * \param [out] mndev Mirrored network interface.
  *
  * \retval Matched network interface.
  * \retval NULL No matched network interface.
  */
 extern int
-ngknet_rx_pkt_filter(struct ngknet_dev *dev, struct sk_buff *skb, struct net_device **ndev,
-                     struct net_device **mndev, struct sk_buff **mskb);
+ngknet_rx_pkt_filter(struct ngknet_dev *dev,
+                     struct sk_buff **oskb, struct net_device **ndev,
+                     struct sk_buff **mskb, struct net_device **mndev);
 
 /*!
  * \brief Rx rate limit control.

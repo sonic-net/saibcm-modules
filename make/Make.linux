@@ -68,6 +68,10 @@ LINUX_MAKE_DIR := $(SDK)/systems/linux/kernel/common
 endif
 endif
 
+ifneq (,$(findstring iproc,$(platform)))
+  ADD_TO_CFLAGS += -DINCLUDE_MTD
+endif
+
 ifdef LINUX_MAKE_USER
   CMD = $(LINUX_MAKE_FLAGS) -C $(LINUX_MAKE_DIR) \
         platform=$(platform) bldroot_suffix=/$(platform) kernel_version=$(kernel_version) \

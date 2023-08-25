@@ -73,7 +73,7 @@ typedef int
 (*knet_hw_tstamp_enable_cb_f)(int dev_no, int phys_port, int tx_type);
 
 typedef int
-(*knet_hw_tstamp_tx_time_get_cb_f)(int dev_no, int phys_port, uint8_t *pkt, uint64_t *ts);
+(*knet_hw_tstamp_tx_time_get_cb_f)(int dev_no, int phys_port, uint8_t *pkt, uint64_t *ts, int tx_type);
 
 typedef int
 (*knet_hw_tstamp_tx_meta_get_cb_f)(int dev_no, int hwts, int hdrlen, struct sk_buff *skb, uint64_t *ts, uint32_t **md);
@@ -89,6 +89,9 @@ typedef int
 
 typedef int
 (*knet_hw_tstamp_ioctl_cmd_cb_f)(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type);
+
+typedef int
+(*knet_hw_tstamp_ptp_transport_get_cb_f)(uint8_t *pkt);
 
 extern int
 bkn_rx_skb_cb_register(knet_skb_cb_f rx_cb);
@@ -156,6 +159,11 @@ bkn_hw_tstamp_ioctl_cmd_cb_register(knet_hw_tstamp_ioctl_cmd_cb_f hw_tstamp_ioct
 extern int
 bkn_hw_tstamp_ioctl_cmd_cb_unregister(knet_hw_tstamp_ioctl_cmd_cb_f hw_tstamp_ioctl_cmd_cb);
 
+extern int
+bkn_hw_tstamp_ptp_transport_get_cb_register(knet_hw_tstamp_ptp_transport_get_cb_f hw_tstamp_ptp_transport_get_cb);
+
+extern int
+bkn_hw_tstamp_ptp_transport_get_cb_unregister(knet_hw_tstamp_ptp_transport_get_cb_f hw_tstamp_ptp_transport_get_cb);
 typedef struct {
     uint8 cmic_type;
     uint8 dcb_type;
@@ -181,7 +189,6 @@ bkn_netif_destroy_cb_register(knet_netif_cb_f netif_cb);
 
 extern int
 bkn_netif_destroy_cb_unregister(knet_netif_cb_f netif_cb);
-
 #endif
 
 #endif /* __LINUX_BCM_KNET_H__ */
