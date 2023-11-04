@@ -58,7 +58,9 @@ SYSTEM_INTERFACE ?= ngbde
 
 # Turn on direct register access if running on real hardware.
 ifeq (ngbde,$(SYSTEM_INTERFACE))
+ifeq (,$(EXTRA_SYSTEM_INTERFACES))
 LTSW_ADD_CPPFLAGS += -DBCMDRD_CONFIG_MEMMAP_DIRECT=1
+endif
 endif
 
 export SYSTEM_INTERFACE

@@ -556,7 +556,6 @@ typedef struct bkn_dcb_chain_s {
     uint32_t *dcb_mem;
     uint64_t dcb_dma;
 } bkn_dcb_chain_t;
-
 /** DNX Meta data */
 typedef struct dnx_meta_data_s
 {
@@ -567,7 +566,6 @@ typedef struct dnx_meta_data_s
     uint32 trap_id:16,          /* Internal.Trap-Code */
         trap_qualifier:16;      /* Internal.Trap-Qualifier */
 #endif
-
 #ifdef LE_HOST
     uint32 forward_domain:16,   /* Bridging: VSI, Routing: VRF */
         spa:16;                 /* FTMH.Source-system-port-aggregate */
@@ -575,14 +573,12 @@ typedef struct dnx_meta_data_s
     uint32 spa:16,              /* FTMH.Source-system-port-aggregate */
         forward_domain:16;      /* Bridging: VSI, Routing: VRF */
 #endif
-
 #ifdef LE_HOST
     uint32 reserve:30, action_type:2;   /* Internal.TM-action-type */
 #else
     uint32 action_type:2,       /* Internal.TM-action-type */
         reserve:30;
 #endif
-
 /** Last DW of DCB */
 #ifdef  LE_HOST
     uint32 count:16,            /* Transferred byte count */
@@ -602,7 +598,6 @@ typedef struct dnx_meta_data_s
         count:16;               /* Transferred byte count */
 #endif
 } dnx_meta_data_t;
-
 #define MAX_TX_DCBS 64
 #define MAX_RX_DCBS 64
 
@@ -650,6 +645,7 @@ typedef struct bkn_switch_info_s {
     uint32_t udh_size;              /* Size of UDH header on legacy devices */
     uint32_t oamp_punt;             /* OAMP port if nonzero */
     uint8_t no_skip_udh_check;      /* Indicates UDH won't be skipped */
+    uint8_t oam_dm_tod_exist;       /* Indicates presence of OAM TOD MSB */
     uint8_t system_headers_mode;    /* Indicates system header mode */
     uint8_t udh_enable;             /* Indicates UDH existence */
     uint8_t oamp_port_number;       /* Indicates number of OAMP system port number */
@@ -673,8 +669,10 @@ typedef struct bkn_switch_info_s {
     uint32_t poll_channels;     /* Channels for polling */
     uint32_t unet_channels;     /* User network channels */
     uint32_t inst_id;           /* Instance id of this device */
+    uint32_t device_id;         /* Device ID, like 0x8675 for Jericho A0, 0x */
     int evt_idx;                /* Event queue index for this device*/
     int basedev_suspended;      /* Base device suspended */
+    int pcie_link_status;       /* This flag is used to indicate PCIE Link status, 0 for up and 1 for down */
     struct sk_buff_head tx_ptp_queue;   /* Tx PTP skb queue */
     struct work_struct tx_ptp_work;     /* Tx PTP work */
     struct {
@@ -1010,7 +1008,9 @@ typedef struct bkn_priv_s {
     int phys_port;
     u32 ptp_stats_tx;
     u32 ptp_stats_rx;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
     struct ethtool_link_settings link_settings;
+#endif
 } bkn_priv_t;
 
 typedef struct bkn_filter_s {
@@ -1059,6 +1059,7 @@ static knet_hw_tstamp_ptp_clock_index_cb_f knet_hw_tstamp_ptp_clock_index_cb = N
 static knet_hw_tstamp_rx_time_upscale_cb_f knet_hw_tstamp_rx_time_upscale_cb = NULL;
 static knet_hw_tstamp_rx_pre_process_cb_f knet_hw_tstamp_rx_pre_process_cb = NULL;
 static knet_hw_tstamp_ioctl_cmd_cb_f knet_hw_tstamp_ioctl_cmd_cb = NULL;
+static knet_hw_tstamp_ptp_transport_get_cb_f knet_hw_tstamp_ptp_transport_get_cb = NULL;
 static knet_netif_cb_f knet_netif_create_cb = NULL;
 static knet_netif_cb_f knet_netif_destroy_cb = NULL;
 /*
@@ -1213,18 +1214,45 @@ bkn_sleep(int clicks)
 /* Maximum packet raw data size for filter validation. */
 #define KNET_FILTER_RAW_MAX             256
 
+static void
+dev_read32(bkn_switch_info_t *sinfo, uint32_t address, uint32_t *value)
+{
+    /* Devices id started with 0x8 is always from DNX devices */
+    if ((sinfo->device_id & 0x8000) == 0x8000)  {
+        if (sinfo->pcie_link_status == PCIE_LINK_STATUS_DOWN) {
+            /* Bypass register access when PCIE Link is down */
+            return;
+        }
+    }
+
+    DEV_READ32(sinfo, address, value);
+}
+
+static void
+dev_write32(bkn_switch_info_t *sinfo, uint32_t address, uint32_t value)
+{
+    /* Devices id started with 0x8 is always from DNX devices */
+    if ((sinfo->device_id & 0x8000) == 0x8000)  {
+        if (sinfo->pcie_link_status == PCIE_LINK_STATUS_DOWN) {
+            /* Bypass register access when PCIE Link is down */
+            return;
+        }
+    }
+
+    DEV_WRITE32(sinfo, address, value);
+}
+
 /*
  * Per-channel operations.
  * These are the basis for the TX/RX functions
  */
-
 static inline void
 xgs_dma_chain_clear(bkn_switch_info_t *sinfo, int chan)
 {
     DBG_IRQ(("Clear chain on device %d chan %d\n",
              sinfo->dev_no, chan));
-    DEV_WRITE32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_CLR(chan));
-    DEV_WRITE32(sinfo, CMIC_DMA_STATr, DS_CHAIN_DONE_CLR(chan));
+    dev_write32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_CLR(chan));
+    dev_write32(sinfo, CMIC_DMA_STATr, DS_CHAIN_DONE_CLR(chan));
 
     MEMORY_BARRIER;
 }
@@ -1232,16 +1260,16 @@ xgs_dma_chain_clear(bkn_switch_info_t *sinfo, int chan)
 static inline void
 xgs_dma_desc_clear(bkn_switch_info_t *sinfo, int chan)
 {
-    uint32_t val;
+    uint32_t val = 0;
 
     DBG_IRQ(("Clear desc on device %d chan %d\n",
              sinfo->dev_no, chan));
-    DEV_WRITE32(sinfo, CMIC_DMA_STATr, DS_DESC_DONE_CLR(chan));
+    dev_write32(sinfo, CMIC_DMA_STATr, DS_DESC_DONE_CLR(chan));
 
     MEMORY_BARRIER;
 
     /* Flush write buffer */
-    DEV_READ32(sinfo, CMIC_DMA_STATr, &val);
+    dev_read32(sinfo, CMIC_DMA_STATr, &val);
 
     MEMORY_BARRIER;
 }
@@ -1258,9 +1286,9 @@ xgs_dma_chan_clear(bkn_switch_info_t *sinfo, int chan)
 static int
 xgs_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
 {
-    uint32_t cdc;
+    uint32_t cdc = 0;
 
-    DEV_READ32(sinfo, CMIC_DMA_CTRLr, &cdc);
+    dev_read32(sinfo, CMIC_DMA_CTRLr, &cdc);
 
     cdc &= ~(0x9 << (8 * chan));
     if (dir) {
@@ -1269,7 +1297,7 @@ xgs_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
         cdc |= 0x8 << (8 * chan);
     }
 
-    DEV_WRITE32(sinfo, CMIC_DMA_CTRLr, cdc);
+    dev_write32(sinfo, CMIC_DMA_CTRLr, cdc);
 
     return 0;
 }
@@ -1278,12 +1306,12 @@ static int
 xgs_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 {
     /* Write the DCB address to the DESC address for this channel */
-    DEV_WRITE32(sinfo, CMIC_DMA_DESC0r + 4 * chan, dcb);
+    dev_write32(sinfo, CMIC_DMA_DESC0r + 4 * chan, dcb);
 
     MEMORY_BARRIER;
 
     /* Kick it off */
-    DEV_WRITE32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_SET(chan));
+    dev_write32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_SET(chan));
 
     MEMORY_BARRIER;
 
@@ -1293,26 +1321,27 @@ xgs_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 static int
 xgs_dma_chan_abort(bkn_switch_info_t *sinfo, int chan, int polls)
 {
-    uint32_t ctrl, dma_stat;
+    uint32_t ctrl = 0;
+    uint32_t dma_stat = 0;
     int p;
 
     /* Clear enable */
-    DEV_WRITE32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_CLR(chan));
+    dev_write32(sinfo, CMIC_DMA_STATr, DS_DMA_EN_CLR(chan));
 
     MEMORY_BARRIER;
 
     /* Abort the channel */
-    DEV_READ32(sinfo, CMIC_DMA_CTRLr, &ctrl);
-    DEV_WRITE32(sinfo, CMIC_DMA_CTRLr, ctrl | DC_ABORT_DMA(chan));
+    dev_read32(sinfo, CMIC_DMA_CTRLr, &ctrl);
+    dev_write32(sinfo, CMIC_DMA_CTRLr, ctrl | DC_ABORT_DMA(chan));
 
     MEMORY_BARRIER;
 
     /* Poll for abort completion */
     for (p = 0; p < polls; p++) {
-        DEV_READ32(sinfo, CMIC_DMA_STATr, &dma_stat);
+        dev_read32(sinfo, CMIC_DMA_STATr, &dma_stat);
         if (!(dma_stat & DS_DMA_ACTIVE(chan))) {
             /* Restore previous control value */
-            DEV_WRITE32(sinfo, CMIC_DMA_CTRLr, ctrl);
+            dev_write32(sinfo, CMIC_DMA_CTRLr, ctrl);
 
             MEMORY_BARRIER;
 
@@ -1330,6 +1359,14 @@ xgs_dma_chan_abort(bkn_switch_info_t *sinfo, int chan, int polls)
 static inline void
 xgs_irq_mask_set(bkn_switch_info_t *sinfo, uint32_t mask)
 {
+    /* Devices id started with 0x8 is always from DNX devices */
+    if ((sinfo->device_id & 0x8000) == 0x8000)  {
+        if (sinfo->pcie_link_status == PCIE_LINK_STATUS_DOWN) {
+            /* Bypass hw access when PCIE Link is down */
+            return;
+        }
+    }
+
     if (sinfo->napi_poll_mode) {
         mask = 0;
     }
@@ -1376,12 +1413,12 @@ xgs_irq_mask_disable(bkn_switch_info_t *sinfo, int chan, int update_hw)
 static inline void
 xgsm_dma_chain_clear(bkn_switch_info_t *sinfo, int chan)
 {
-    uint32_t cdc;
+    uint32_t cdc = 0;
 
     /* Disabing DMA clears chain done */
-    DEV_READ32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
+    dev_read32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
     cdc &= ~(DC_CMC_ENABLE | DC_CMC_ABORT);
-    DEV_WRITE32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
+    dev_write32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
 
     MEMORY_BARRIER;
 }
@@ -1395,12 +1432,12 @@ xgsm_dma_desc_clear(bkn_switch_info_t *sinfo, int chan)
     if (CDMA_CH(sinfo, chan)) {
         val |= DS_CMC_CTRLD_INT_CLR(chan);
     }
-    DEV_WRITE32(sinfo, CMICM_DMA_STAT_CLRr, val);
+    dev_write32(sinfo, CMICM_DMA_STAT_CLRr, val);
 
     MEMORY_BARRIER;
 
     /* Flush write buffer */
-    DEV_READ32(sinfo, CMICM_DMA_STAT_CLRr, &val);
+    dev_read32(sinfo, CMICM_DMA_STAT_CLRr, &val);
 
     MEMORY_BARRIER;
 }
@@ -1417,7 +1454,7 @@ xgsm_dma_chan_clear(bkn_switch_info_t *sinfo, int chan)
 static inline void
 xgsm_cdma_halt_set(bkn_switch_info_t *sinfo, int chan)
 {
-    DEV_WRITE32(sinfo, CMICM_DMA_HALT_ADDRr + 4 * chan,
+    dev_write32(sinfo, CMICM_DMA_HALT_ADDRr + 4 * chan,
                 sinfo->halt_addr[chan]);
 
     MEMORY_BARRIER;
@@ -1426,9 +1463,9 @@ xgsm_cdma_halt_set(bkn_switch_info_t *sinfo, int chan)
 static int
 xgsm_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
 {
-    uint32_t cdc;
+    uint32_t cdc = 0;
 
-    DEV_READ32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
+    dev_read32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
     cdc &= ~DC_CMC_DIRECTION;
     if (dir) {
         cdc |= DC_CMC_DIRECTION;
@@ -1437,7 +1474,7 @@ xgsm_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
         cdc |= DC_CMC_CONTINUOUS | DC_CMC_CTRLD_INT;
         xgsm_cdma_halt_set(sinfo, chan);
     }
-    DEV_WRITE32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
+    dev_write32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
 
     return 0;
 }
@@ -1445,17 +1482,17 @@ xgsm_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
 static int
 xgsm_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 {
-    uint32_t cdc;
+    uint32_t cdc = 0;
 
     /* Write the DCB address to the DESC address for this channel */
-    DEV_WRITE32(sinfo, CMICM_DMA_DESC0r + 4 * chan, dcb);
+    dev_write32(sinfo, CMICM_DMA_DESC0r + 4 * chan, dcb);
 
     MEMORY_BARRIER;
 
     /* Kick it off */
-    DEV_READ32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
+    dev_read32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &cdc);
     cdc |= DC_CMC_ENABLE;
-    DEV_WRITE32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
+    dev_write32(sinfo, CMICM_DMA_CTRLr + 4 * chan, cdc);
 
     MEMORY_BARRIER;
 
@@ -1465,25 +1502,26 @@ xgsm_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 static int
 xgsm_dma_chan_abort(bkn_switch_info_t *sinfo, int chan, int polls)
 {
-    uint32_t ctrl, dma_stat;
+    uint32_t ctrl = 0;
+    uint32_t dma_stat = 0;
     int p;
 
     /* Skip abort sequence if channel is not active */
-    DEV_READ32(sinfo, CMICM_DMA_STATr, &dma_stat);
+    dev_read32(sinfo, CMICM_DMA_STATr, &dma_stat);
     if (!(dma_stat & DS_CMC_DMA_ACTIVE(chan))) {
         return 0;
     }
 
     /* Abort the channel */
-    DEV_READ32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &ctrl);
+    dev_read32(sinfo, CMICM_DMA_CTRLr + 4 * chan, &ctrl);
     ctrl |= (DC_CMC_ENABLE | DC_CMC_ABORT);
-    DEV_WRITE32(sinfo, CMICM_DMA_CTRLr + 4 * chan, ctrl);
+    dev_write32(sinfo, CMICM_DMA_CTRLr + 4 * chan, ctrl);
 
     MEMORY_BARRIER;
 
     /* Poll for abort completion */
     for (p = 0; p < polls; p++) {
-        DEV_READ32(sinfo, CMICM_DMA_STATr, &dma_stat);
+        dev_read32(sinfo, CMICM_DMA_STATr, &dma_stat);
         if (!(dma_stat & DS_CMC_DMA_ACTIVE(chan))) {
             /* Clear up channel */
             xgsm_dma_chan_clear(sinfo, chan);
@@ -1500,6 +1538,14 @@ xgsm_irq_mask_set(bkn_switch_info_t *sinfo, uint32_t mask)
 {
     uint32_t irq_mask_reg = CMICM_IRQ_PCI_MASKr;
     uint32_t ctrld_mask = 0;
+
+    /* Devices id started with 0x8 is always from DNX devices */
+    if ((sinfo->device_id & 0x8000) == 0x8000)  {
+        if (sinfo->pcie_link_status == PCIE_LINK_STATUS_DOWN) {
+            /* Bypass hw access when PCIE Link is down */
+            return;
+        }
+    }
 
     if (sinfo->napi_poll_mode) {
         mask = 0;
@@ -1562,20 +1608,21 @@ xgsm_irq_mask_disable(bkn_switch_info_t *sinfo, int chan, int update_hw)
 static inline void
 xgsx_dma_chain_clear(bkn_switch_info_t *sinfo, int chan)
 {
-    uint32_t ctrl, stat;
+    uint32_t ctrl = 0;
+    uint32_t stat = 0;
 
     /* Disabing DMA clears chain done */
-    DEV_READ32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+    dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
     ctrl &= ~(CMICX_DC_CMC_ENABLE | CMICX_DC_CMC_ABORT);
-    DEV_WRITE32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
+    dev_write32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
 
     stat = CMICX_DS_CMC_CHAIN_DONE(chan);
-    DEV_WRITE32(sinfo, CMICX_IRQ_STAT_CLRr, stat);
+    dev_write32(sinfo, CMICX_IRQ_STAT_CLRr, stat);
 
     MEMORY_BARRIER;
 
     /* Flush write buffer */
-    DEV_READ32(sinfo, CMICX_IRQ_STAT_CLRr, &stat);
+    dev_read32(sinfo, CMICX_IRQ_STAT_CLRr, &stat);
 
     MEMORY_BARRIER;
 }
@@ -1583,19 +1630,19 @@ xgsx_dma_chain_clear(bkn_switch_info_t *sinfo, int chan)
 static inline void
 xgsx_dma_desc_clear(bkn_switch_info_t *sinfo, int chan)
 {
-    uint32_t stat;
+    uint32_t stat = 0;
 
     if (CDMA_CH(sinfo, chan)) {
         stat = CMICX_DS_CMC_CTRLD_INT(chan);
     } else {
         stat = CMICX_DS_CMC_DESC_DONE(chan);
     }
-    DEV_WRITE32(sinfo, CMICX_IRQ_STAT_CLRr, stat);
+    dev_write32(sinfo, CMICX_IRQ_STAT_CLRr, stat);
 
     MEMORY_BARRIER;
 
     /* Flush write buffer */
-    DEV_READ32(sinfo, CMICX_IRQ_STAT_CLRr, &stat);
+    dev_read32(sinfo, CMICX_IRQ_STAT_CLRr, &stat);
 
     MEMORY_BARRIER;
 }
@@ -1612,9 +1659,9 @@ xgsx_dma_chan_clear(bkn_switch_info_t *sinfo, int chan)
 static inline void
 xgsx_cdma_halt_set(bkn_switch_info_t *sinfo, int chan)
 {
-    DEV_WRITE32(sinfo, CMICX_DMA_HALT_LOr + 0x80 * chan,
+    dev_write32(sinfo, CMICX_DMA_HALT_LOr + 0x80 * chan,
                 sinfo->halt_addr[chan]);
-    DEV_WRITE32(sinfo, CMICX_DMA_HALT_HIr + 0x80 * chan,
+    dev_write32(sinfo, CMICX_DMA_HALT_HIr + 0x80 * chan,
                 DMA_TO_BUS_HI(sinfo->halt_addr[chan] >> 32));
 
     MEMORY_BARRIER;
@@ -1623,9 +1670,9 @@ xgsx_cdma_halt_set(bkn_switch_info_t *sinfo, int chan)
 static int
 xgsx_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
 {
-    uint32_t ctrl;
+    uint32_t ctrl = 0;
 
-    DEV_READ32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+    dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
     ctrl &= ~CMICX_DC_CMC_DIRECTION;
     if (dir) {
         ctrl |= CMICX_DC_CMC_DIRECTION;
@@ -1634,7 +1681,7 @@ xgsx_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
         ctrl |= CMICX_DC_CMC_CONTINUOUS | CMICX_DC_CMC_CTRLD_INT;
         xgsx_cdma_halt_set(sinfo, chan);
     }
-    DEV_WRITE32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
+    dev_write32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
 
     MEMORY_BARRIER;
 
@@ -1644,18 +1691,18 @@ xgsx_dma_chan_init(bkn_switch_info_t *sinfo, int chan, int dir)
 static int
 xgsx_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 {
-    uint32_t ctrl;
+    uint32_t ctrl = 0;
 
     /* Write the DCB address to the DESC address for this channel */
-    DEV_WRITE32(sinfo, CMICX_DMA_DESC_LOr + 0x80 * chan, dcb);
-    DEV_WRITE32(sinfo, CMICX_DMA_DESC_HIr + 0x80 * chan, DMA_TO_BUS_HI(dcb >> 32));
+    dev_write32(sinfo, CMICX_DMA_DESC_LOr + 0x80 * chan, dcb);
+    dev_write32(sinfo, CMICX_DMA_DESC_HIr + 0x80 * chan, DMA_TO_BUS_HI(dcb >> 32));
 
     MEMORY_BARRIER;
 
     /* Kick it off */
-    DEV_READ32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+    dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
     ctrl |= CMICX_DC_CMC_ENABLE;
-    DEV_WRITE32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
+    dev_write32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
 
     MEMORY_BARRIER;
 
@@ -1665,25 +1712,26 @@ xgsx_dma_chan_start(bkn_switch_info_t *sinfo, int chan, uint64_t dcb)
 static int
 xgsx_dma_chan_abort(bkn_switch_info_t *sinfo, int chan, int polls)
 {
-    uint32_t ctrl, stat;
+    uint32_t ctrl = 0;
+    uint32_t stat = 0;
     int p;
 
     /* Skip abort sequence if channel is not active */
-    DEV_READ32(sinfo, CMICX_DMA_STATr + 0x80 * chan, &stat);
+    dev_read32(sinfo, CMICX_DMA_STATr + 0x80 * chan, &stat);
     if (!(stat & CMICX_DS_CMC_DMA_ACTIVE)) {
         return 0;
     }
 
     /* Abort the channel */
-    DEV_READ32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+    dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
     ctrl |= CMICX_DC_CMC_ENABLE | CMICX_DC_CMC_ABORT;
-    DEV_WRITE32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
+    dev_write32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, ctrl);
 
     MEMORY_BARRIER;
 
     /* Poll for abort completion */
     for (p = 0; p < polls; p++) {
-        DEV_READ32(sinfo, CMICX_DMA_STATr + 0x80 * chan, &stat);
+        dev_read32(sinfo, CMICX_DMA_STATr + 0x80 * chan, &stat);
         if (!(stat & CMICX_DS_CMC_DMA_ACTIVE)) {
             /* Clear up channel */
             xgsx_dma_chan_clear(sinfo, chan);
@@ -1721,6 +1769,14 @@ xgsx_irq_mask_set(bkn_switch_info_t *sinfo, uint32_t mask)
     uint32_t irq_mask_reg = CMICX_IRQ_ENABr;
     uint32_t irq_mask, irq_fmask, disable_mask;
     uint32_t fmask = CMICX_TXRX_IRQ_MASK;
+
+    /* Devices id started with 0x8 is always from DNX devices */
+    if ((sinfo->device_id & 0x8000) == 0x8000)  {
+        if (sinfo->pcie_link_status == PCIE_LINK_STATUS_DOWN) {
+            /* Bypass hw access when PCIE Link is down */
+            return;
+        }
+    }
 
     if (sinfo->napi_poll_mode) {
         mask = 0;
@@ -2354,6 +2410,9 @@ bkn_rx_refill(bkn_switch_info_t *sinfo, int chan)
         return;
     }
 
+    /* Add meta data length */
+    resv_size += sinfo->pkt_hdr_size;
+
     while (sinfo->rx[chan].free < MAX_RX_DCBS) {
         desc = &sinfo->rx[chan].desc[sinfo->rx[chan].cur];
         if (desc->skb == NULL) {
@@ -2361,6 +2420,7 @@ bkn_rx_refill(bkn_switch_info_t *sinfo, int chan)
             if (skb == NULL) {
                 break;
             }
+            /* Reserve buffer space for RCPU encapsulation if needed */
             skb_reserve(skb, SKB_DATA_ALIGN(resv_size));
             desc->skb = skb;
         } else {
@@ -3038,7 +3098,9 @@ bkn_dpp_packet_parse_otsh(
                 BKN_DPP_OTSH_OAM_SUB_TYPE_NOF_BITS,
                 &oam_sub_type);
         if ((oam_sub_type == BKN_DPP_OTSH_OAM_SUB_TYPE_DM_1588) || (oam_sub_type == BKN_DPP_OTSH_OAM_SUB_TYPE_DM_NTP)) {
-            *is_oam_dm_tod_en = TRUE;
+            if (sinfo->oam_dm_tod_exist) {
+                *is_oam_dm_tod_en = TRUE;
+            }
             /* Down MEP DM trapped packets will not have UDH present (even if configured), except for QAX when custom_feature_oam_dm_tod_msb_add_enable=0 */
             if (!sinfo->no_skip_udh_check) {
                 *is_skip_udh =  TRUE;
@@ -4109,6 +4171,7 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
     bkn_priv_t *mpriv;
     struct sk_buff *mskb = NULL;
     uint32_t *rx_cb_meta;
+    int metalen;
 
     if (!sinfo->rx[chan].running) {
         /* Rx not ready */
@@ -4185,6 +4248,22 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                 err_woff = sinfo->pkt_hdr_size / sizeof(uint32_t) - 1;
                 meta[err_woff] = dcb[sinfo->dcb_wsize-1];
             } else {
+                /* Packet sent from R5(KNETSYNC) has EP_TO_CPU_HDR in skb->data
+                 * and not in dcb header. Information within the EP_TO_CPU_HDR
+                 * is considered as metadata to find the KNET filter.
+                 *
+                 * Below WAR implementation is to copy the EP_TO_CPU_HDR from
+                 * sdk->data to dcb header(with EP_TO_CPU as 0's) for further
+                 * packet processing.
+                 */
+                if (sinfo->dcb_type == 37 && dcb[5] == 0) {
+                    metalen = (sinfo->dcb_wsize - 3) * sizeof(uint32_t);
+                    meta = (uint32_t *)skb->data;
+                    for (idx = 0; idx < BYTES2WORDS(metalen); idx++) {
+                        dcb[idx + 2] = ntohl(meta[idx]);
+                    }
+                    skip_hdrlen = metalen;
+                }
                 meta = dcb;
                 err_woff = sinfo->dcb_wsize - 1;
             }
@@ -4506,6 +4585,101 @@ bkn_do_rx(bkn_switch_info_t *sinfo, int chan, int budget)
 }
 
 static void
+bkn_rx_debug_dump(bkn_switch_info_t *sinfo, int chan)
+{
+    uint32_t *dcb = NULL;
+    bkn_dcb_chain_t *dcb_chain = NULL;
+    struct list_head *curr, *next;
+    int cnt;
+    uint32_t irq_stat, dma_stat, dma_ctrl;
+
+    gprintk("Rx%d DCB info (dev_no %d):\n"
+            "  api:   %d\n"
+            "  dirty: %d\n"
+            "  cur:   %d\n"
+            "  free:  %d\n"
+            "  run:   %d\n",
+            chan, sinfo->dev_no,
+            sinfo->rx[chan].api_active,
+            sinfo->rx[chan].dirty,
+            sinfo->rx[chan].cur,
+            sinfo->rx[chan].free,
+            sinfo->rx[chan].running);
+    if (sinfo->rx[chan].use_rx_skb) {
+        gprintk("  [0x%08lx]--->\n",
+                (unsigned long)sinfo->rx[chan].desc[0].dcb_dma);
+        for (cnt = 0; cnt < MAX_RX_DCBS; cnt++) {
+            dcb = sinfo->rx[chan].desc[cnt].dcb_mem;
+            if (sinfo->cmic_type == 'x') {
+                gprintk("  DCB %2d: 0x%08x 0x%08x 0x%08x 0x%08x\n", cnt,
+                        dcb[0], dcb[1], dcb[2], dcb[sinfo->dcb_wsize-1]);
+            } else {
+                gprintk("  DCB %2d: 0x%08x 0x%08x ... 0x%08x\n", cnt,
+                        dcb[0], dcb[1], dcb[sinfo->dcb_wsize-1]);
+            }
+        }
+    } else {
+        curr = &sinfo->rx[chan].api_dcb_list;
+        dcb_chain = sinfo->rx[chan].api_dcb_chain;
+        while (dcb_chain) {
+            gprintk("  [0x%08lx]--->\n", (unsigned long)dcb_chain->dcb_dma);
+            for (cnt = 0; cnt < dcb_chain->dcb_cnt; cnt++) {
+                dcb = &dcb_chain->dcb_mem[sinfo->dcb_wsize * cnt];
+                if (sinfo->cmic_type == 'x') {
+                    gprintk("  DCB %2d: 0x%08x 0x%08x 0x%08x 0x%08x\n", cnt,
+                            dcb[0], dcb[1], dcb[2], dcb[sinfo->dcb_wsize-1]);
+                } else {
+                    gprintk("  DCB %2d: 0x%08x 0x%08x ... 0x%08x\n", cnt,
+                            dcb[0], dcb[1], dcb[sinfo->dcb_wsize-1]);
+                }
+            }
+            next = curr->next;
+            if (next != &sinfo->rx[chan].api_dcb_list) {
+                dcb_chain = list_entry(next, bkn_dcb_chain_t, list);
+                curr = next;
+            } else {
+                dcb_chain = NULL;
+            }
+        }
+    }
+
+    irq_stat = dma_stat = dma_ctrl = 0;
+    if (DEV_IS_CMICX(sinfo)) {
+        dev_read32(sinfo,
+                   CMICX_IRQ_STATr,
+                   &irq_stat);
+        dev_read32(sinfo,
+                   CMICX_DMA_STATr,
+                   &dma_stat);
+        dev_read32(sinfo,
+                   CMICX_DMA_CTRLr + 0x80 * (XGS_DMA_RX_CHAN + chan),
+                   &dma_ctrl);
+    } else if (DEV_IS_CMICM(sinfo)) {
+        dev_read32(sinfo,
+                   CMICM_IRQ_STATr,
+                   &irq_stat);
+        dev_read32(sinfo,
+                   CMICM_DMA_STATr,
+                   &dma_stat);
+        dev_read32(sinfo,
+                   CMICM_DMA_CTRLr + 0x80 * (XGS_DMA_RX_CHAN + chan),
+                   &dma_ctrl);
+    } else {
+        dev_read32(sinfo,
+                   CMIC_IRQ_STATr,
+                   &irq_stat);
+        dev_read32(sinfo,
+                   CMIC_DMA_STATr,
+                   &dma_stat);
+        dev_read32(sinfo,
+                   CMIC_DMA_CTRLr + 0x80 * (XGS_DMA_RX_CHAN + chan),
+                   &dma_ctrl);
+    }
+    gprintk("CMIC irq_stat:0x%08x dma_stat:0x%08x dma_ctrl(RX%d):0x%08x \n",
+            irq_stat, dma_stat, chan, dma_ctrl);
+}
+
+static void
 bkn_rx_desc_done(bkn_switch_info_t *sinfo, int chan)
 {
     bkn_evt_resource_t *evt;
@@ -4545,6 +4719,7 @@ bkn_rx_chain_done(bkn_switch_info_t *sinfo, int chan)
             }
             if (++maxloop > rx_sync_retry) {
                 gprintk("Fatal error: Incomplete chain\n");
+                bkn_rx_debug_dump(sinfo, chan);
                 sinfo->rx[chan].chain_complete = 1;
                 break;
             }
@@ -4581,7 +4756,9 @@ bkn_suspend_tx(bkn_switch_info_t *sinfo)
     /* Stop associated virtual devices */
     list_for_each(list, &sinfo->ndev_list) {
         priv = (bkn_priv_t *)list;
-        netif_stop_queue(priv->dev);
+        if (priv->dev) {
+            netif_stop_queue(priv->dev);
+        }
     }
 }
 
@@ -4598,8 +4775,10 @@ bkn_resume_tx(bkn_switch_info_t *sinfo)
     /* Check associated virtual devices */
     list_for_each(list, &sinfo->ndev_list) {
         priv = (bkn_priv_t *)list;
-        if (netif_queue_stopped(priv->dev) && sinfo->tx.free > 1) {
-            netif_wake_queue(priv->dev);
+        if (priv->dev) {
+            if (netif_queue_stopped(priv->dev) && sinfo->tx.free > 1) {
+                netif_wake_queue(priv->dev);
+            }
         }
     }
 }
@@ -4630,14 +4809,22 @@ bkn_hw_tstamp_tx_set(bkn_switch_info_t *sinfo, struct sk_buff *skb)
     hwts = KNET_SKB_CB(skb)->hwts;
     ts = KNET_SKB_CB(skb)->ts;
 
-
-    if (hwts == HWTSTAMP_TX_ONESTEP_SYNC) {
-        if (ts == 0) {
-            return 1;
-        }
-    } else if (hwts == HWTSTAMP_TX_ON) {
-        if (knet_hw_tstamp_tx_time_get_cb(sinfo->dev_no, port, skb->data + hdrlen, &ts) < 0) {
+    if (device_is_dnx(sinfo)) {
+        port =  port + 1;
+        if (knet_hw_tstamp_tx_time_get_cb(sinfo->dev_no, port, skb->data + hdrlen, &ts, hwts) < 0) {
+            DBG_VERB(("Error in setting tx tstsamp \n"));
             return -1;
+        }
+    } else {
+        if (hwts == HWTSTAMP_TX_ONESTEP_SYNC) {
+            if (ts == 0) {
+                return 1;
+            }
+        } else if (hwts == HWTSTAMP_TX_ON) {
+            if (knet_hw_tstamp_tx_time_get_cb(sinfo->dev_no, port, skb->data + hdrlen, &ts, hwts) < 0) {
+                DBG_VERB(("Error in setting tx tstsamp \n"));
+                return -1;
+            }
         }
     }
 
@@ -4654,23 +4841,41 @@ bkn_hw_tstamp_tx_work(struct work_struct *work)
     bkn_switch_info_t *sinfo = container_of(work, bkn_switch_info_t, tx_ptp_work);
     struct sk_buff *skb;
     int ret;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+    ktime_t tstamp;
+#endif
 
     while (skb_queue_len(&sinfo->tx_ptp_queue)) {
         skb = skb_dequeue(&sinfo->tx_ptp_queue);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
+        tstamp = skb->tstamp;
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
+        /*
+         * For Linux versions with simultaneous SW and HW TS support.
+         * If the driver sends out SW TS included in skb->tstamp, then the
+         * Kernel will no longer send the HW TS to the application,
+         * so set the populated skb->tstamp to 0.
+         */
+        skb->tstamp = 0;
+#endif
+
         ret = bkn_hw_tstamp_tx_set(sinfo, skb);
         if (ret < 0) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
             ktime_t now;
             now = ktime_get();
             DBG_PTP(("2Step TX Timestamp has not been taken for the current skb (%lld us)\n",
-                                    ktime_us_delta(now, skb->tstamp)));
+                                    ktime_us_delta(now, tstamp)));
         } else {
             ktime_t now;
             now = ktime_get();
             /* Timeout 20 should be same as configured by PTP4L */
-            if (ktime_us_delta(now, skb->tstamp) >= 20000) {
+            if (ktime_us_delta(now, tstamp) >= 20000) {
                 DBG_PTP(("2Step TX Timestamp fetch took long time %lld us\n",
-                            ktime_us_delta(now, skb->tstamp)));
+                            ktime_us_delta(now, tstamp)));
             }
 #else
             DBG_PTP(("2Step TX Timestamp has not been taken for the current skb\n"));
@@ -5023,11 +5228,11 @@ xgs_do_dma(bkn_switch_info_t *sinfo, int budget)
 {
     int rx_dcbs_done = 0, tx_dcbs_done = 0;
     int chan_done, budget_chans = 0;
-    uint32_t dma_stat;
+    uint32_t dma_stat = 0;
     int chan;
     int unet_chans = 0;
 
-    DEV_READ32(sinfo, CMIC_DMA_STATr, &dma_stat);
+    dev_read32(sinfo, CMIC_DMA_STATr, &dma_stat);
 
     for (chan = 0; chan < sinfo->rx_chans; chan++) {
         if (UNET_CH(sinfo, XGS_DMA_RX_CHAN + chan)) {
@@ -5087,16 +5292,16 @@ xgsm_do_dma(bkn_switch_info_t *sinfo, int budget)
 {
     int rx_dcbs_done = 0, tx_dcbs_done = 0;
     int chan_done, budget_chans = 0;
-    uint32_t dma_stat, irq_stat = 0;
+    uint32_t dma_stat =0, irq_stat = 0;
     int chan;
     int unet_chans = 0;
 
     /* Get Controlled interrupt states for Continuous DMA mode */
     if (sinfo->cdma_channels) {
-        DEV_READ32(sinfo, CMICM_IRQ_STATr, &irq_stat);
+        dev_read32(sinfo, CMICM_IRQ_STATr, &irq_stat);
     }
 
-    DEV_READ32(sinfo, CMICM_DMA_STATr, &dma_stat);
+    dev_read32(sinfo, CMICM_DMA_STATr, &dma_stat);
 
     for (chan = 0; chan < sinfo->rx_chans; chan++) {
         if (UNET_CH(sinfo, XGS_DMA_RX_CHAN + chan)) {
@@ -5166,18 +5371,20 @@ xgsx_do_dma(bkn_switch_info_t *sinfo, int budget)
 {
     int rx_dcbs_done = 0, tx_dcbs_done = 0;
     int chan_done, budget_chans = 0;
-    uint32_t irq_stat, tx_dma_stat, rx_dma_stat[NUM_CMICX_RX_CHAN];
+    uint32_t irq_stat = 0;
+    uint32_t tx_dma_stat = 0;
+    uint32_t rx_dma_stat[NUM_CMICX_RX_CHAN] = {0};
     int chan;
     int unet_chans = 0;
 
-    DEV_READ32(sinfo, CMICX_IRQ_STATr, &irq_stat);
-    DEV_READ32(sinfo, CMICX_DMA_STATr + 0x80 * XGS_DMA_TX_CHAN, &tx_dma_stat);
+    dev_read32(sinfo, CMICX_IRQ_STATr, &irq_stat);
+    dev_read32(sinfo, CMICX_DMA_STATr + 0x80 * XGS_DMA_TX_CHAN, &tx_dma_stat);
     for (chan = 0; chan < sinfo->rx_chans; chan++) {
         if (UNET_CH(sinfo, XGS_DMA_RX_CHAN + chan)) {
             unet_chans++;
             continue;
         }
-        DEV_READ32(sinfo,
+        dev_read32(sinfo,
                    CMICX_DMA_STATr + 0x80 * (XGS_DMA_RX_CHAN + chan),
                    &rx_dma_stat[chan]);
     }
@@ -5261,10 +5468,10 @@ dev_do_dma(bkn_switch_info_t *sinfo, int budget)
 static void
 xgs_isr(bkn_switch_info_t *sinfo)
 {
-    uint32_t irq_stat;
+    uint32_t irq_stat = 0;
     int rx_dcbs_done;
 
-    DEV_READ32(sinfo, CMIC_IRQ_STATr, &irq_stat);
+    dev_read32(sinfo, CMIC_IRQ_STATr, &irq_stat);
     if ((irq_stat & sinfo->irq_mask) == 0) {
         /* Not ours */
         return;
@@ -5289,10 +5496,10 @@ xgs_isr(bkn_switch_info_t *sinfo)
 static void
 xgsm_isr(bkn_switch_info_t *sinfo)
 {
-    uint32_t irq_stat;
+    uint32_t irq_stat = 0;
     int rx_dcbs_done;
 
-    DEV_READ32(sinfo, CMICM_IRQ_STATr, &irq_stat);
+    dev_read32(sinfo, CMICM_IRQ_STATr, &irq_stat);
     if ((irq_stat & sinfo->irq_mask) == 0) {
         /* Not ours */
         return;
@@ -5323,10 +5530,10 @@ xgsm_isr(bkn_switch_info_t *sinfo)
 static void
 xgsx_isr(bkn_switch_info_t *sinfo)
 {
-    uint32_t irq_stat;
+    uint32_t irq_stat = 0;
     int rx_dcbs_done;
 
-    DEV_READ32(sinfo, CMICX_IRQ_STATr, &irq_stat);
+    dev_read32(sinfo, CMICX_IRQ_STATr, &irq_stat);
     if ((irq_stat & sinfo->irq_mask) == 0) {
         /* Not ours */
         return;
@@ -5338,7 +5545,7 @@ xgsx_isr(bkn_switch_info_t *sinfo)
         int chan = 0;
         for (chan = 0; chan < NUM_DMA_CHAN; chan++) {
             if (irq_stat & CMICX_DS_CMC_CHAIN_DONE(chan)) {
-                DEV_READ32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+                dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
                 if (ctrl & CMICX_DC_CMC_ABORT) {
                     DBG_IRQ(("chain %d: chain done for Abort\n", chan));
                     return;
@@ -5741,17 +5948,19 @@ bkn_hw_tstamp_tx_config(bkn_switch_info_t *sinfo,
         return 0;
     }
 
-    if (!md) {
+    if (!md && !device_is_dnx(sinfo)) {
         return -1;
     }
 
     switch (sinfo->dcb_type) {
     case 28: /* dpp */
+    case 39: /* DNX - Q2A, J2C */
         break;
     case 26:
     case 32:
     case 33:
     case 35:
+    case 37:
         meta[2] |= md[0];
         meta[3] |= md[1];
         meta[4] |= md[2];
@@ -5785,8 +5994,9 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
     unsigned long flags;
     uint8_t cpu_channel = 0;
     int headroom, tailroom;
+    int ptp_transport = 0;
 
-    DBG_VERB(("Netif Tx: Len=%d priv->id=%d\n", skb->len, priv->id));
+    DBG_VERB(("Netif Tx(%s): Len=%d priv->id=%d\n", dev->name, skb->len, priv->id));
 
     if (priv->id <= 0) {
         /* Do not transmit on base device */
@@ -5824,8 +6034,28 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
             /* Account for extra OAM-TS header. */
             if ((bkn_skb_tx_flags(skb) & SKBTX_HW_TSTAMP) &&
                 (hdrlen > (BKN_DNX_PTCH_2_SIZE))) {
-                /* T_LOCAL_PORT intf will use PTCH_2 + ITMH */
-                hdrlen += BKN_DPP_OTSH_SIZE_BYTE;
+                if (device_is_dnx(sinfo)) {
+                    if (knet_hw_tstamp_ptp_transport_get_cb != NULL) {
+                        ptp_transport = knet_hw_tstamp_ptp_transport_get_cb(skb->data);
+                        switch(ptp_transport) {
+                            case 6: /* UDP IPv6   */
+                                /* T_LOCAL_PORT intf will use
+                                    Module Hdr + PTCH + ITMH + ASE1588 + TSH + INTERNAL_HDR + UDH base
+                                */
+                                hdrlen += (BKN_DNX_FTMH_APP_SPECIFIC_EXT_SIZE + BKN_DNX_TSH_SIZE +
+                                            BKN_DNX_INTERNAL_BASE_TYPE_12 + BKN_DNX_UDH_BASE_SIZE);
+                                break;
+                            case 4: /* UDP IPv4   */
+                            case 2: /* IEEE 802.3 */
+                            default:
+                                /* T_LOCAL_PORT intf will use Module Hdr + PTCH + ITMH + ASE1588 + TSH */
+                                hdrlen += (BKN_DNX_FTMH_APP_SPECIFIC_EXT_SIZE + BKN_DNX_TSH_SIZE);
+                                break;
+                        }
+                    }
+                } else {
+                    hdrlen += BKN_DPP_OTSH_SIZE_BYTE;
+                }
             }
 
         }
@@ -5916,7 +6146,7 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
                             tailroom = FCS_SZ;
                             new_skb = skb_copy_expand(skb,
                                                       headroom + skb_headroom(skb),
-                                                      tailroom + skb_tailroom(skb),
+                                                      tailroom,
                                                       GFP_ATOMIC);
                             if (new_skb == NULL) {
                                 DBG_WARN(("Tx drop: No SKB memory\n"));
@@ -5968,7 +6198,7 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
                     tailroom = FCS_SZ;
                     new_skb = skb_copy_expand(skb,
                                               headroom + skb_headroom(skb),
-                                              tailroom + skb_tailroom(skb),
+                                              tailroom,
                                               GFP_ATOMIC);
                     if (new_skb == NULL) {
                         DBG_WARN(("Tx drop: No SKB memory\n"));
@@ -6005,7 +6235,7 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
                         tailroom = FCS_SZ;
                         new_skb = skb_copy_expand(skb,
                                                   headroom + skb_headroom(skb),
-                                                  tailroom + skb_tailroom(skb),
+                                                  tailroom,
                                                   GFP_ATOMIC);
                         if (new_skb == NULL) {
                             DBG_WARN(("Tx drop: No SKB memory\n"));
@@ -6204,6 +6434,18 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
                     dcb[3] |= (priv->qnum & 0xc00) << 20;
                     dcb[4] = 0x00040000;
                     dcb[4] |= (priv->qnum & 0x3ff) << 8;
+                }
+                break;
+            case 41:
+                if (sinfo->cmic_type == 'x') {
+                    meta[0] = htonl(0x81000000);
+                    meta[1] = (priv->port) << 4;
+                    meta[2] = htonl(0x00400000 | (priv->qnum & 0x3fff) << 8);
+                } else {
+                    dcb[2] = 0x81000000;
+                    dcb[3] = (priv->port) << 4;
+                    dcb[4] = 0x00400000;
+                    dcb[4] |= (priv->qnum & 0x3fff) << 8;
                 }
                 break;
             default:
@@ -6706,6 +6948,8 @@ bkn_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
     case 36:
     case 38:
     case 40:
+    case 41:
+    case 37:
         info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
                                 SOF_TIMESTAMPING_TX_SOFTWARE |
                                 SOF_TIMESTAMPING_RX_HARDWARE |
@@ -6713,6 +6957,21 @@ bkn_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
                                 SOF_TIMESTAMPING_SOFTWARE |
                                 SOF_TIMESTAMPING_RAW_HARDWARE;
         info->tx_types = 1 << HWTSTAMP_TX_OFF | 1 << HWTSTAMP_TX_ON;
+        info->rx_filters = 1 << HWTSTAMP_FILTER_NONE | 1 << HWTSTAMP_FILTER_ALL;
+        if (knet_hw_tstamp_ptp_clock_index_cb) {
+            info->phc_index = knet_hw_tstamp_ptp_clock_index_cb(sinfo->dev_no);
+        } else {
+            info->phc_index = -1;
+        }
+        break;
+    case 39: /* dnx - q2a, j2c */
+        info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
+                                SOF_TIMESTAMPING_TX_SOFTWARE |
+                                SOF_TIMESTAMPING_RX_HARDWARE |
+                                SOF_TIMESTAMPING_RX_SOFTWARE |
+                                SOF_TIMESTAMPING_SOFTWARE |
+                                SOF_TIMESTAMPING_RAW_HARDWARE;
+        info->tx_types = 1 << HWTSTAMP_TX_OFF | 1 << HWTSTAMP_TX_ON | 1 << HWTSTAMP_TX_ONESTEP_SYNC;
         info->rx_filters = 1 << HWTSTAMP_FILTER_NONE | 1 << HWTSTAMP_FILTER_ALL;
         if (knet_hw_tstamp_ptp_clock_index_cb) {
             info->phc_index = knet_hw_tstamp_ptp_clock_index_cb(sinfo->dev_no);
@@ -6733,29 +6992,27 @@ bkn_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
-static int bkn_get_link_ksettings(struct net_device *netdev,
-                                  struct ethtool_link_ksettings *cmd)
+static int
+bkn_get_link_ksettings(struct net_device *netdev,
+                       struct ethtool_link_ksettings *cmd)
 {
     bkn_priv_t *priv = netdev_priv(netdev);
 
-    /* only speed info now, can enhance later */
-    if (priv) {
-        cmd->base.speed  = priv->link_settings.speed;
-        cmd->base.duplex = priv->link_settings.duplex;
-    }
+    cmd->base.speed = priv->link_settings.speed;
+    cmd->base.duplex = priv->link_settings.duplex;
+
     return 0;
 }
 
-static int bkn_set_link_ksettings(struct net_device *netdev,
-                                  const struct ethtool_link_ksettings *cmd)
+static int
+bkn_set_link_ksettings(struct net_device *netdev,
+                       const struct ethtool_link_ksettings *cmd)
 {
     bkn_priv_t *priv = netdev_priv(netdev);
 
-    /* only speed info now, can enhance later */
-    if (priv) {
-        priv->link_settings.speed  = cmd->base.speed;
-        priv->link_settings.duplex = cmd->base.speed? DUPLEX_FULL : 0;
-    }
+    priv->link_settings.speed = cmd->base.speed;
+    priv->link_settings.duplex = cmd->base.speed ? DUPLEX_FULL : 0;
+
     return 0;
 }
 #endif
@@ -6800,7 +7057,6 @@ bkn_init_ndev(u8 *mac, char *name)
         dev->mtu = rx_buffer_size;
     }
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0))
-    dev->min_mtu = 68;
     dev->max_mtu = rx_buffer_size;
 #endif
 
@@ -6823,11 +7079,9 @@ bkn_init_ndev(u8 *mac, char *name)
     if (name && *name) {
         strncpy(dev->name, name, IFNAMSIZ-1);
     }
-
 #if defined(CONFIG_NET_NS)
     bkn_dev_net_set(dev, current->nsproxy->net_ns);
 #endif
-
     /* Register the kernel Ethernet device */
     if (register_netdev(dev)) {
         DBG_WARN(("Error registering Ethernet device.\n"));
@@ -6954,11 +7208,11 @@ bkn_proc_link_write(struct file *file, const char *buf,
 
 struct proc_ops bkn_proc_link_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_link_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_link_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_link_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_link_write,
+    .proc_release =     single_release,
 };
 
 /*
@@ -7064,11 +7318,11 @@ bkn_proc_rate_write(struct file *file, const char *buf,
 
 struct proc_ops bkn_proc_rate_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_rate_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_rate_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_rate_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_rate_write,
+    .proc_release =     single_release,
 };
 
 /*
@@ -7314,10 +7568,10 @@ bkn_seq_dma_open(struct inode *inode, struct file *file)
 
 static struct proc_ops bkn_seq_dma_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open    = bkn_seq_dma_open,
-    .proc_read    = seq_read,
-    .proc_lseek   = seq_lseek,
-    .proc_release = seq_release
+    .proc_open =        bkn_seq_dma_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_release =     seq_release
 };
 
 /*
@@ -7404,7 +7658,7 @@ bkn_proc_debug_show(struct seq_file *m, void *v)
     seq_printf(m, "  force_tagged:   %d\n", force_tagged);
     seq_printf(m, "  ft_tpid:        %d\n", ft_tpid);
     seq_printf(m, "  ft_pri:         %d\n", ft_pri);
-    seq_printf(m, "  ft_pri:         %d\n", ft_cfi);
+    seq_printf(m, "  ft_cfi:         %d\n", ft_cfi);
     seq_printf(m, "  ft_tpid:        %d\n", ft_vid);
     seq_printf(m, "Active IOCTLs:\n");
     seq_printf(m, "  Command:        %d\n", ioctl_cmd);
@@ -7437,7 +7691,8 @@ bkn_proc_debug_show(struct seq_file *m, void *v)
                       sinfo->oamp_ports[1],
                       sinfo->oamp_ports[2],
                       sinfo->oamp_ports[3]);
-
+        seq_printf(m, "  device_id:      0x%x\n", sinfo->device_id);
+        seq_printf(m, "  pcie_status:    %d\n", sinfo->pcie_link_status);
         unit++;
     }
 
@@ -7451,11 +7706,11 @@ static int bkn_proc_debug_open(struct inode * inode, struct file * file)
 
 struct proc_ops bkn_proc_debug_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_debug_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_debug_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_debug_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_debug_write,
+    .proc_release =     single_release,
 };
 
 /*
@@ -7469,10 +7724,11 @@ bkn_proc_stats_show(struct seq_file *m, void *v)
     bkn_switch_info_t *sinfo;
     bkn_filter_t *filter;
     int chan;
-
+    unsigned long flags;
 
     list_for_each(list, &_sinfo_list) {
         sinfo = (bkn_switch_info_t *)list;
+        spin_lock_irqsave(&sinfo->lock, flags);
 
         seq_printf(m, "Device stats (unit %d):\n", unit);
         seq_printf(m, "  Interrupts  %10u\n", sinfo->interrupts);
@@ -7500,6 +7756,7 @@ bkn_proc_stats_show(struct seq_file *m, void *v)
         }
 
         unit++;
+        spin_unlock_irqrestore(&sinfo->lock, flags);
     }
     return 0;
 }
@@ -7580,11 +7837,11 @@ bkn_proc_stats_write(struct file *file, const char *buf,
 
 struct proc_ops bkn_proc_stats_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_stats_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_stats_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_stats_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_stats_write,
+    .proc_release =     single_release,
 };
 
 
@@ -7598,9 +7855,11 @@ bkn_proc_dstats_show(struct seq_file *m, void *v)
     struct list_head *list;
     bkn_switch_info_t *sinfo;
     int chan;
+    unsigned long flags;
 
     list_for_each(list, &_sinfo_list) {
         sinfo = (bkn_switch_info_t *)list;
+        spin_lock_irqsave(&sinfo->lock, flags);
 
         seq_printf(m, "Device debug stats (unit %d):\n", unit);
         seq_printf(m, "  Tx drop no skb      %10u\n",
@@ -7654,6 +7913,7 @@ bkn_proc_dstats_show(struct seq_file *m, void *v)
                             chan, sinfo->rx[chan].pkts_d_no_api_buf);
         }
         unit++;
+        spin_unlock_irqrestore(&sinfo->lock, flags);
     }
     return 0;
 }
@@ -7757,11 +8017,11 @@ bkn_proc_dstats_write(struct file *file, const char *buf,
 
 struct proc_ops bkn_proc_dstats_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_dstats_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_dstats_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_dstats_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_dstats_write,
+    .proc_release =     single_release,
 };
 
 /*
@@ -7865,11 +8125,11 @@ bkn_proc_ptp_stats_write(struct file *file, const char *buf, size_t count, loff_
 
 struct proc_ops bkn_proc_ptp_stats_file_ops = {
     PROC_OWNER(THIS_MODULE)
-    .proc_open =       bkn_proc_ptp_stats_open,
-    .proc_read =       seq_read,
-    .proc_lseek =      seq_lseek,
-    .proc_write =      bkn_proc_ptp_stats_write,
-    .proc_release =    single_release,
+    .proc_open =        bkn_proc_ptp_stats_open,
+    .proc_read =        seq_read,
+    .proc_lseek =       seq_lseek,
+    .proc_write =       bkn_proc_ptp_stats_write,
+    .proc_release =     single_release,
 };
 
 
@@ -8100,7 +8360,10 @@ bkn_create_inst(uint32 inst_id)
         if ((_bkn_multi_inst == 0) || (evt->inst_id == INVALID_INSTANCE_ID)) {
             _bkn_multi_inst ++;
             evt_idx = i;
-            init_waitqueue_head(&evt->evt_wq);
+            /* avoid repeated initialization */
+            if (!waitqueue_active(&evt->evt_wq)) {
+                init_waitqueue_head(&evt->evt_wq);
+            }
             evt->inst_id = inst_id;
             DBG_INST(("%s evt_idx %d inst_id 0x%x\n",__FUNCTION__, i, inst_id));
             break;
@@ -8361,6 +8624,7 @@ bkn_knet_hw_init(kcom_msg_hw_init_t *kmsg, int len)
         sinfo->udh_size = kmsg->udh_size;
         sinfo->oamp_punt = kmsg->oamp_punted;
         sinfo->no_skip_udh_check = kmsg->no_skip_udh_check;
+        sinfo->oam_dm_tod_exist = kmsg->oam_dm_tod_exist;
         sinfo->system_headers_mode = kmsg->system_headers_mode;
         sinfo->udh_enable = kmsg->udh_enable;
     }
@@ -8550,7 +8814,7 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
         priv->port = kmsg->netif.port;
         priv->phys_port = kmsg->netif.phys_port;
         priv->qnum = kmsg->netif.qnum;
-        memset(&(priv->link_settings), 0, sizeof(struct ethtool_link_settings));;
+        memset(&(priv->link_settings), 0, sizeof(struct ethtool_link_settings));
     } else {
         if (device_is_sand(sinfo) && (priv->type == KCOM_NETIF_T_VLAN)) {
             /* PTCH.SSPA */
@@ -8629,13 +8893,12 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
     if (!device_is_sand(sinfo)) {
         if (knet_netif_create_cb != NULL) {
             int retv = knet_netif_create_cb(kmsg->hdr.unit, &(kmsg->netif), kmsg->netif.port, dev);
-            if (retv) { 
+            if (retv) {
                 gprintk("Warning: knet_netif_create_cb() returned %d for netif '%s'\n", retv, dev->name);
             }
         }
     }
     spin_unlock_irqrestore(&sinfo->lock, flags);
-
     if (device_is_sand(sinfo)) {
         int idx = 0;
         for (idx = 0; idx < priv->system_headers_size; idx++) {
@@ -8881,13 +9144,11 @@ bkn_knet_filter_create(kcom_msg_filter_create_t *kmsg, int len)
     }
 
     kmsg->filter.id = filter->kf.id;
-
     if (device_is_dnx(sinfo)) {
         int wsize;
         kcom_netif_t netif;
         bkn_priv_t *priv;
         dnx_meta_data_t *meta_data;
-
         wsize = BYTES2WORDS(filter->kf.oob_data_size + filter->kf.pkt_data_size);
         if (wsize == 4)
         {
@@ -8909,13 +9170,10 @@ bkn_knet_filter_create(kcom_msg_filter_create_t *kmsg, int len)
                         }
                     }
                 }
-
             }
         }
     }
-
     spin_unlock_irqrestore(&sinfo->lock, flags);
-
     DBG_VERB(("Created filter ID %d (%s) for device:%d.\n",
               filter->kf.id, filter->kf.desc, kmsg->filter.dest_id));
     if (device_is_sand(sinfo)) {
@@ -8991,7 +9249,6 @@ bkn_knet_filter_destroy(kcom_msg_filter_destroy_t *kmsg, int len)
             }
         }
     }
-
     list_del(&filter->list);
 
     cfg_api_unlock(sinfo, &flags);
@@ -9134,6 +9391,27 @@ bkn_knet_wb_cleanup(kcom_msg_wb_cleanup_t *kmsg, int len)
 }
 
 static int
+bkn_knet_pcie_link_status_set(kcom_msg_pcie_link_status_t*kmsg, int len)
+{
+    bkn_switch_info_t *sinfo;
+    unsigned long flags;
+
+    kmsg->hdr.type = KCOM_MSG_TYPE_RSP;
+
+    sinfo = bkn_sinfo_from_unit(kmsg->hdr.unit);
+    if (sinfo == NULL) {
+        kmsg->hdr.status = KCOM_E_PARAM;
+        return sizeof(kcom_msg_hdr_t);
+    }
+
+    cfg_api_lock(sinfo, &flags);
+    sinfo->pcie_link_status = kmsg->pcie_link_status;
+    cfg_api_unlock(sinfo, &flags);
+
+    return sizeof(kcom_msg_hdr_t);
+}
+
+static int
 bkn_handle_cmd_req(kcom_msg_t *kmsg, int len)
 {
     /* Silently drop events and unrecognized message types */
@@ -9238,7 +9516,7 @@ bkn_handle_cmd_req(kcom_msg_t *kmsg, int len)
         /* Clean up for warmbooting */
         len = bkn_knet_wb_cleanup(&kmsg->wb_cleanup, len);
         break;
-     case KCOM_M_CLOCK_CMD:
+    case KCOM_M_CLOCK_CMD:
         /* PHC clock control*/
         if (knet_hw_tstamp_ioctl_cmd_cb) {
             bkn_switch_info_t *sinfo;
@@ -9255,6 +9533,11 @@ bkn_handle_cmd_req(kcom_msg_t *kmsg, int len)
             kmsg->hdr.opcode = 0;
             len = sizeof(kcom_msg_hdr_t);
         }
+        break;
+    case KCOM_M_PCIE_LINK_STATUS:
+        DBG_CMD(("KCOM_M_PCIE_LINK_STATUS\n"));
+        /* Set PCIE link status */
+        len = bkn_knet_pcie_link_status_set(&kmsg->pcie_link_status, len);
         break;
     default:
         DBG_WARN(("Unsupported command (type=%d, opcode=%d)\n",
@@ -9498,6 +9781,7 @@ bkn_knet_dev_init(int d)
     /* Initialize default RCPU signature */
     if ((bde_dev = kernel_bde->get_dev(d)) != NULL) {
         sinfo->rcpu_sig = bde_dev->device & ~0xf;
+        sinfo->device_id= bde_dev->device & ~0xf;
     }
     /* Check for override */
     if (rcpu_signature) {
@@ -9583,11 +9867,11 @@ _init(void)
 
     /* Initialize event queue */
     for (idx = 0; idx < LINUX_BDE_MAX_DEVICES; idx++) {
-        memset(&_bkn_evt[idx], 0, sizeof(bkn_evt_resource_t));
-        _bkn_evt[idx].inst_id = INVALID_INSTANCE_ID;
+        evt = &_bkn_evt[idx];
+        memset(evt, 0, sizeof(bkn_evt_resource_t));
+        evt->inst_id = INVALID_INSTANCE_ID;
+        init_waitqueue_head(&evt->evt_wq);
     }
-    evt = &_bkn_evt[0];
-    init_waitqueue_head(&evt->evt_wq);
 
     module_initialized = 1;
 
@@ -9674,7 +9958,6 @@ gmodule_get(void)
     EXPORT_NO_SYMBOLS;
     return &_gmodule;
 }
-
 /*
  * Get DCB type and other HW info
  */
@@ -9687,16 +9970,13 @@ bkn_hw_info_get(int unit, knet_hw_info_t *hw_info)
         gprintk("Warning: unknown unit: %d\n", unit);
         return (-1);
     }
-
     hw_info->cmic_type = sinfo->cmic_type;
     hw_info->dcb_type = sinfo->dcb_type;
     hw_info->dcb_size = WORDS2BYTES(sinfo->dcb_wsize);
     hw_info->pkt_hdr_size = sinfo->pkt_hdr_size;
     hw_info->cdma_channels = sinfo->cdma_channels;
-
     return (0);
 }
-
 int
 bkn_netif_create_cb_register(knet_netif_cb_f netif_cb)
 {
@@ -9706,7 +9986,6 @@ bkn_netif_create_cb_register(knet_netif_cb_f netif_cb)
     knet_netif_create_cb = netif_cb;
     return 0;
 }
-
 int
 bkn_netif_create_cb_unregister(knet_netif_cb_f netif_cb)
 {
@@ -9716,7 +9995,6 @@ bkn_netif_create_cb_unregister(knet_netif_cb_f netif_cb)
     knet_netif_create_cb = NULL;
     return 0;
 }
-
 int
 bkn_netif_destroy_cb_register(knet_netif_cb_f netif_cb)
 {
@@ -9726,7 +10004,6 @@ bkn_netif_destroy_cb_register(knet_netif_cb_f netif_cb)
     knet_netif_destroy_cb = netif_cb;
     return 0;
 }
-
 int
 bkn_netif_destroy_cb_unregister(knet_netif_cb_f netif_cb)
 {
@@ -9736,7 +10013,6 @@ bkn_netif_destroy_cb_unregister(knet_netif_cb_f netif_cb)
     knet_netif_destroy_cb = NULL;
     return 0;
 }
-
 /*
  * Call-back interfaces for other Linux kernel drivers.
  *
@@ -9981,6 +10257,27 @@ bkn_hw_tstamp_ioctl_cmd_cb_unregister(knet_hw_tstamp_ioctl_cmd_cb_f hw_tstamp_io
     return 0;
 }
 
+int
+bkn_hw_tstamp_ptp_transport_get_cb_register(knet_hw_tstamp_ptp_transport_get_cb_f hw_tstamp_ptp_transport_get_cb)
+{
+    if (knet_hw_tstamp_ptp_transport_get_cb != NULL) {
+        return -1;
+    }
+    knet_hw_tstamp_ptp_transport_get_cb = hw_tstamp_ptp_transport_get_cb;
+    return 0;
+}
+
+int
+bkn_hw_tstamp_ptp_transport_get_cb_unregister(knet_hw_tstamp_ptp_transport_get_cb_f hw_tstamp_ptp_transport_get_cb)
+{
+    if (knet_hw_tstamp_ptp_transport_get_cb == NULL ||
+        knet_hw_tstamp_ptp_transport_get_cb != hw_tstamp_ptp_transport_get_cb) {
+        return -1;
+    }
+    knet_hw_tstamp_ptp_transport_get_cb = NULL;
+    return 0;
+}
+
 LKM_EXPORT_SYM(bkn_rx_skb_cb_register);
 LKM_EXPORT_SYM(bkn_rx_skb_cb_unregister);
 LKM_EXPORT_SYM(bkn_tx_skb_cb_register);
@@ -10003,6 +10300,8 @@ LKM_EXPORT_SYM(bkn_hw_tstamp_rx_pre_process_cb_register);
 LKM_EXPORT_SYM(bkn_hw_tstamp_rx_pre_process_cb_unregister);
 LKM_EXPORT_SYM(bkn_hw_tstamp_ioctl_cmd_cb_register);
 LKM_EXPORT_SYM(bkn_hw_tstamp_ioctl_cmd_cb_unregister);
+LKM_EXPORT_SYM(bkn_hw_tstamp_ptp_transport_get_cb_register);
+LKM_EXPORT_SYM(bkn_hw_tstamp_ptp_transport_get_cb_unregister);
 LKM_EXPORT_SYM(bkn_hw_info_get);
 LKM_EXPORT_SYM(bkn_netif_create_cb_register);
 LKM_EXPORT_SYM(bkn_netif_create_cb_unregister);
