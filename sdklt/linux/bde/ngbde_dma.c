@@ -4,7 +4,7 @@
  *
  */
 /*
- * $Copyright: Copyright 2018-2021 Broadcom. All rights reserved.
+ * Copyright 2018-2024 Broadcom. All rights reserved.
  * The term 'Broadcom' refers to Broadcom Inc. and/or its subsidiaries.
  * 
  * This program is free software; you can redistribute it and/or
@@ -17,41 +17,43 @@
  * GNU General Public License for more details.
  * 
  * A copy of the GNU General Public License version 2 (GPLv2) can
- * be found in the LICENSES folder.$
+ * be found in the LICENSES folder.
  */
 
 #include <ngbde.h>
 
 /*! \cond */
 static int dma_debug = 0;
-module_param(dma_debug, int, 0);
+module_param(dma_debug, int, S_IRUSR | S_IWUSR);
 MODULE_PARM_DESC(dma_debug,
 "DMA debug output enable (default 0).");
 /*! \endcond */
 
 /*! Default size of of DMA memory pools (in MB). */
-#define DMAPOOL_SIZE_DEFAULT    16
+#ifndef DMAPOOL_SIZE_DEFAULT
+#define DMAPOOL_SIZE_DEFAULT    32
+#endif
 
 /*! Default number of DMA memory pools per device. */
 #define NUM_DMAPOOL_DEFAULT     1
 
 /*! \cond */
 static int dma_size = DMAPOOL_SIZE_DEFAULT;
-module_param(dma_size, int, 0);
+module_param(dma_size, int, S_IRUSR);
 MODULE_PARM_DESC(dma_size,
-"Size of of DMA memory pools in MB (default 16 MB).");
+"Size of of DMA memory pools in MB (default 32 MB).");
 /*! \endcond */
 
 /*! \cond */
-static char *dma_alloc;
-module_param(dma_alloc, charp, 0);
+static char *dma_alloc = "auto";
+module_param(dma_alloc, charp, S_IRUSR);
 MODULE_PARM_DESC(dma_alloc,
 "DMA allocation method auto|kapi|pgmem (default auto)");
 /*! \endcond */
 
 /*! \cond */
 static int dma_pools = NUM_DMAPOOL_DEFAULT;
-module_param(dma_pools, int, 0);
+module_param(dma_pools, int, S_IRUSR);
 MODULE_PARM_DESC(dma_pools,
 "Number of DMA memory pools to pre-allocate per device (default 1).");
 /*! \endcond */
@@ -120,10 +122,12 @@ ngbde_dmamem_pgmem_alloc(ngbde_dmactrl_t *dmactrl, ngbde_dmamem_t *dmamem)
         dmamem->baddr = dma_map_single(dmamem->dev, dmamem->vaddr,
                                        dmamem->size, DMA_BIDIRECTIONAL);
         if (dma_mapping_error(dmactrl->dev, dmamem->baddr)) {
-            dmamem->baddr = 0;
+            ngbde_pgmem_free(dmamem->vaddr);
+            memset(dmamem, 0, sizeof(*dmamem));
             if (dma_debug) {
                 printk("DMA: Failed to map PGMEM memory\n");
             }
+            return;
         }
 
         /* Write small signature for debug purposes */
@@ -223,7 +227,7 @@ ngbde_dmamem_free(ngbde_dmamem_t *dmamem)
                    (int)(dmamem->size / ONE_KB));
         }
         dma_free_coherent(dmamem->dev, dmamem->size,
-                          dmamem->vaddr, dmamem->paddr);
+                          dmamem->vaddr, dmamem->baddr);
         memset(dmamem, 0, sizeof(*dmamem));
         break;
     case NGBDE_DMA_T_PGMEM:
@@ -298,7 +302,9 @@ ngbde_dma_init(void)
 
     /* Check for forced DMA allocation method */
     if (dma_alloc) {
-        if (strcmp(dma_alloc, "kapi") == 0) {
+        if (strcmp(dma_alloc, "auto") == 0) {
+            dma_type = NGBDE_DMA_T_AUTO;
+        } else if (strcmp(dma_alloc, "kapi") == 0) {
             dma_type = NGBDE_DMA_T_KAPI;
         } else if (strcmp(dma_alloc, "pgmem") == 0) {
             dma_type = NGBDE_DMA_T_PGMEM;
