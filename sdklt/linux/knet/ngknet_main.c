@@ -2023,7 +2023,7 @@ ngknet_dev_probe(int dn, ngknet_netif_t *netif)
             priv_hdl[hdl->unit][hdl->chan].hdl = hdl;
             hdl->priv = &priv_hdl[hdl->unit][hdl->chan];
             netif_napi_add(ndev, (struct napi_struct *)hdl->priv,
-                           ngknet_poll, pdev->ctrl.budget);
+                           ngknet_poll);
             if (pdev->flags & PDMA_GROUP_INTR) {
                 break;
             }
