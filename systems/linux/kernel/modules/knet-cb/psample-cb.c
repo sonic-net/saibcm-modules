@@ -75,6 +75,14 @@ LKM_MOD_PARAM(psample_size, "i", int, 0);
 MODULE_PARM_DESC(psample_size,
 "psample pkt size (default 128 bytes)");
 
+#if !IS_ENABLED(CONFIG_PSAMPLE)
+inline struct 
+psample_group *psample_group_get(struct net *net, u32 group_num)
+{
+    return NULL;
+}
+#endif
+
 /* driver proc entry root */
 static struct proc_dir_entry *psample_proc_root = NULL;
 
@@ -415,7 +423,6 @@ psample_filter_cb(uint8_t * pkt, int size, int dev_no, void *pkt_meta,
     struct sk_buff skb;
     int rv = 0;
     static int info_get = 0;
-    struct psample_metadata md = {0};
 
     if (!info_get) {
         rv = psample_info_get (dev_no, &g_psample_info);
@@ -452,6 +459,13 @@ psample_filter_cb(uint8_t * pkt, int size, int dev_no, void *pkt_meta,
 
     /* drop if configured sample rate is 0 */
     if (meta.sample_rate > 0) {
+#if ((IS_ENABLED(CONFIG_PSAMPLE) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)) || \
+     (defined PSAMPLE_MD_EXTENDED_ATTR && PSAMPLE_MD_EXTENDED_ATTR))
+        struct psample_metadata md = {0};
+        md.trunc_size = meta.trunc_size;
+        md.in_ifindex = meta.src_ifindex;
+        md.out_ifindex = meta.dst_ifindex;
+#endif
         /* setup skb to point to pkt */
         memset(&skb, 0, sizeof(struct sk_buff));
         skb.len = size;
@@ -459,15 +473,20 @@ psample_filter_cb(uint8_t * pkt, int size, int dev_no, void *pkt_meta,
 
         PSAMPLE_CB_DBG_PRINT("%s: psample_sample_packet - group 0x%x, trunc_size %d, src_ifdx %d, dst_ifdx %d, sample_rate %d\n",
                 __func__, group->group_num, meta.trunc_size, meta.src_ifindex, meta.dst_ifindex, meta.sample_rate);
-        
-        md.trunc_size = meta.trunc_size;
-        md.in_ifindex = meta.src_ifindex;
-        md.out_ifindex = meta.dst_ifindex;
+#if ((IS_ENABLED(CONFIG_PSAMPLE) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)) || \
+     (defined PSAMPLE_MD_EXTENDED_ATTR && PSAMPLE_MD_EXTENDED_ATTR))
         psample_sample_packet(group, 
-                              &skb, 
+                              &skb,
                               meta.sample_rate,
                               &md);
-
+#else
+        psample_sample_packet(group, 
+                              &skb, 
+                              meta.trunc_size,
+                              meta.src_ifindex,
+                              meta.dst_ifindex,
+                              meta.sample_rate);
+#endif
         g_psample_stats.pkts_f_psample_mod++;
     } else {
         g_psample_stats.pkts_d_sampling_disabled++;

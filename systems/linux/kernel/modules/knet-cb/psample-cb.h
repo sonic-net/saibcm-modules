@@ -42,7 +42,7 @@ typedef struct {
     struct list_head list;
     struct net_device *dev;
     uint16 id;
-    uint8  port; /* physical port */
+    uint16 port; /* physical port */
     uint16 spa;  /* JR2: Systerm Port Aggregate */
     uint16 vlan;
     uint16 qnum;
