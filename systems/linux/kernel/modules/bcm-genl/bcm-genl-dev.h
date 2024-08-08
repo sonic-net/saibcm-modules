@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2020 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2024 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -22,20 +22,35 @@
  * License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
  * 
  * This software is governed by the Broadcom Open Network Switch APIs license:
- * https://www.broadcom.com/products/ethernet-connectivity/software/opennsa
- */
-/*
- * $Id: thread.h,v 1.1 Broadcom SDK $
- * $Copyright: (c) 2005 Broadcom Corp.
- * All Rights Reserved.$
+ * https://www.broadcom.com/products/ethernet-connectivity/software/opennsa $
+ * 
+ * 
  */
 
-#ifndef _SAL_THREAD_H
-#define _SAL_THREAD_H
+#ifndef __BCM_GENL_DEV_H__
+#define __BCM_GENL_DEV_H__
 
-#include <sal/types.h>
+extern int
+bcmgenl_dev_pktmeta_rx_srcport_get(int dev_no, void *pkt_meta,
+                                   uint32_t *srcport);
 
-void		sal_usleep(uint32 usec);
-void		sal_udelay(uint32 usec);
+extern int
+bcmgenl_dev_pktmeta_rx_dstport_get(int dev_no, void *pkt_meta,
+                                   bool *mcast, uint32_t *dstport);
 
-#endif	/* !_SAL_THREAD_H */
+extern int
+bcmgenl_dev_pktmeta_rx_reason_get(int dev_no, void *pkt_meta, uint64_t *reason);
+
+extern int
+bcmgenl_dev_rx_reason_sample_source_get(int dev_no, uint64_t *val);
+
+extern int
+bcmgenl_dev_dcb_info_get(int dev_no, int *dcb_type, int *dcb_size);
+
+extern int
+bcmgenl_dev_init(void);
+
+extern int
+bcmgenl_dev_cleanup(void);
+
+#endif /* __BCM_GENL_DEV_H__ */
