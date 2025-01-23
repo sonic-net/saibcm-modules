@@ -72,7 +72,7 @@
 #define KCOM_M_CLOCK_CMD        52 /* Clock Commands */
 #define KCOM_M_PCIE_LINK_STATUS 53 /* PCIe link status */
 
-#define KCOM_VERSION            16 /* Protocol version */
+#define KCOM_VERSION            17 /* Protocol version */
 
 /*
  * Message status codes
@@ -371,7 +371,7 @@ typedef struct kcom_msg_version_s {
 
 typedef struct kcom_clock_info_s {
     uint8 cmd;
-    int32 data[8];
+    int32 data[12];
 } kcom_clock_info_t;
 
 /*
@@ -588,6 +588,7 @@ typedef struct kcom_msg_hw_info_s {
     uint32 udh_length_type[4];
     uint32 udh_size;
     uint32 oamp_punted;
+    uint32 enet_channels;
     uint8 no_skip_udh_check;
     uint8 oam_dm_tod_exist;
     uint8 system_headers_mode;
