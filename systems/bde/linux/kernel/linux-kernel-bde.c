@@ -221,7 +221,11 @@ MODULE_PARM_DESC(pci_bridge_setup,
 #define _ISR_PARAMS(_i,_d,_r) int _i, void *_d, struct pt_regs *_r
 typedef irqreturn_t (*irq_handler_t)(int _i, void *_d, struct pt_regs *_r);
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0))
+#define SYNC_IRQ(_i) synchronize_hardirq(_i)
+#else
 #define SYNC_IRQ(_i) synchronize_irq(_i)
+#endif
 char * ___strtok;
 char * strtok(char * s,const char * ct)
 {
