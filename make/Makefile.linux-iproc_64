@@ -88,6 +88,7 @@ endif
 ifeq ($(LOCALDIR),src/soc/phy/fcmap/src)
 OPT_CFLAGS += -Wno-address-of-packed-member
 endif
+
 CFGFLAGS += -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS
 CFGFLAGS += -DPHYS_ADDRS_ARE_64BITS
 CFLAGS += -fno-aggressive-loop-optimizations -fno-strict-overflow

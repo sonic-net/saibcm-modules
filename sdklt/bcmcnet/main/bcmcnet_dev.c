@@ -4,7 +4,7 @@
  *
  */
 /*
- * $Copyright: Copyright 2018-2021 Broadcom. All rights reserved.
+ * Copyright 2018-2024 Broadcom. All rights reserved.
  * The term 'Broadcom' refers to Broadcom Inc. and/or its subsidiaries.
  * 
  * This program is free software; you can redistribute it and/or
@@ -17,7 +17,7 @@
  * GNU General Public License for more details.
  * 
  * A copy of the GNU General Public License version 2 (GPLv2) can
- * be found in the LICENSES folder.$
+ * be found in the LICENSES folder.
  */
 
 #include <bcmcnet/bcmcnet_core.h>
@@ -67,11 +67,11 @@ bcn_rx_queues_alloc(struct pdma_dev *dev)
             if (!rxq) {
                 goto error;
             }
+            ctrl->grp[gi].rx_queue[qi] = rxq;
             sal_memset(rxq, 0, sizeof(*rxq));
             rxq->group_id = gi;
             rxq->chan_id = qi + gi * dev->grp_queues;
             rxq->ctrl = ctrl;
-            ctrl->grp[gi].rx_queue[qi] = rxq;
             if (dev->mode == DEV_MODE_HNET) {
                 vrxq = sal_alloc(sizeof(*vrxq), "bcmcnetVnetRxQueue");
                 if (!vrxq) {
@@ -139,15 +139,15 @@ bcn_tx_queues_alloc(struct pdma_dev *dev)
             if (!txq) {
                 goto error;
             }
+            ctrl->grp[gi].tx_queue[qi] = txq;
             sal_memset(txq, 0, sizeof(*txq));
             txq->group_id = gi;
             txq->chan_id = qi + gi * dev->grp_queues;
             txq->ctrl = ctrl;
-            txq->sem = sal_sem_create("bcmcnetTxMutexSem", SAL_SEM_BINARY, 0);
+            txq->sem = sal_sem_create("bcmcnetTxMutexSem", SAL_SEM_BINARY, 1);
             if (!txq->sem) {
                 goto error;
             }
-            ctrl->grp[gi].tx_queue[qi] = txq;
             if (dev->mode == DEV_MODE_HNET) {
                 vtxq = sal_alloc(sizeof(*vtxq), "bcmcnetVnetTxQueue");
                 if (!vtxq) {
@@ -220,8 +220,8 @@ bcn_rx_queue_group_parse(struct pdma_dev *dev, uint32_t qbm)
                 }
                 rxq->buf_size += dev->rx_ph_size;
                 /* Set mode and state for the queue */
-                rxq->mode = bm->rx_buf_mode(dev, rxq);
-                rxq->state = PDMA_RX_QUEUE_USED;
+                rxq->buf_mode = bm->rx_buf_mode(dev, rxq);
+                rxq->state |= PDMA_RX_QUEUE_USED;
                 if (dev->flags & PDMA_RX_BATCHING) {
                     rxq->free_thresh = rxq->nb_desc / 4;
                     rxq->state |= PDMA_RX_BATCH_REFILL;
@@ -297,7 +297,7 @@ bcn_tx_queue_group_parse(struct pdma_dev *dev, uint32_t qbm)
                     ctrl->grp[gi].nb_desc[qi] = txq->nb_desc;
                 }
                 /* Set mode and state for the queue */
-                txq->state = PDMA_TX_QUEUE_USED;
+                txq->state |= PDMA_TX_QUEUE_USED;
                 if (dev->flags & PDMA_TX_POLLING) {
                     txq->free_thresh = txq->nb_desc / 4;
                     txq->state |= PDMA_TX_QUEUE_POLL;
@@ -364,7 +364,7 @@ bcmcnet_pdma_config(struct pdma_dev *dev, uint32_t bm_rxq, uint32_t bm_txq)
         }
         /* Update group metadata */
         if (!ctrl->grp[gi].bm_rxq && !ctrl->grp[gi].bm_txq) {
-            ctrl->grp[gi].attached = 0;
+            ctrl->grp[gi].attached = false;
             ctrl->bm_grp &= ~(1 << gi);
             ctrl->nb_grp--;
             continue;
@@ -398,7 +398,7 @@ bcmcnet_pdma_close(struct pdma_dev *dev)
         ctrl->nb_grp--;
         ctrl->grp[gi].irq_mask = 0;
         ctrl->grp[gi].poll_queues = 0;
-        ctrl->grp[gi].attached = 0;
+        ctrl->grp[gi].attached = false;
     }
 
     bcn_rx_queues_free(dev);
@@ -420,8 +420,12 @@ bcmcnet_pdma_suspend(struct pdma_dev *dev)
         bcmcnet_pdma_rx_queue_suspend(dev, qi);
     }
 
-    for (qi = 0; qi < ctrl->nb_txq; qi++) {
-        bcmcnet_pdma_tx_queue_suspend(dev, qi);
+    if (dev->ndev_detach) {
+        dev->ndev_detach(dev);
+    } else {
+        for (qi = 0; qi < ctrl->nb_txq; qi++) {
+            bcmcnet_pdma_tx_queue_suspend(dev, qi);
+        }
     }
 
     return SHR_E_NONE;
@@ -436,12 +440,16 @@ bcmcnet_pdma_resume(struct pdma_dev *dev)
     struct dev_ctrl *ctrl = &dev->ctrl;
     uint32_t qi;
 
-    for (qi = 0; qi < ctrl->nb_rxq; qi++) {
-        bcmcnet_pdma_rx_queue_resume(dev, qi);
+    if (dev->ndev_attach) {
+        dev->ndev_attach(dev);
+    } else {
+        for (qi = 0; qi < ctrl->nb_txq; qi++) {
+            bcmcnet_pdma_tx_queue_resume(dev, qi);
+        }
     }
 
-    for (qi = 0; qi < ctrl->nb_txq; qi++) {
-        bcmcnet_pdma_tx_queue_resume(dev, qi);
+    for (qi = 0; qi < ctrl->nb_rxq; qi++) {
+        bcmcnet_pdma_rx_queue_resume(dev, qi);
     }
 
     return SHR_E_NONE;
@@ -485,6 +493,7 @@ bcmcnet_pdma_info_get(struct pdma_dev *dev)
         }
         dev->info.rx_buf_size[qi] = rxq->buf_size;
         dev->info.nb_rx_desc[qi] = rxq->nb_desc;
+        dev->info.rxq_state[qi] = rxq->state;
     }
 
     for (qi = 0; qi < ctrl->nb_txq; qi++) {
@@ -493,6 +502,37 @@ bcmcnet_pdma_info_get(struct pdma_dev *dev)
             continue;
         }
         dev->info.nb_tx_desc[qi] = txq->nb_desc;
+        dev->info.txq_state[qi] = txq->state;
+    }
+}
+
+/*!
+ * Add values in uint64_t array to values
+ * in another array of the same size.
+ */
+static void
+bcmcnet_uint64s_add(void *src, void *add, int num)
+{
+    uint64_t *a = src, *b = add;
+    int i;
+
+    for (i = 0; i < num; i++) {
+        a[i] += b[i];
+    }
+}
+
+/*!
+ * Subtract values in uint64_t array from values
+ * in another array of the same size.
+ */
+static void
+bcmcnet_uint64s_sub(void *src, void *sub, int num)
+{
+    uint64_t *a = src, *b = sub;
+    int i;
+
+    for (i = 0; i < num; i++) {
+        a[i] -= b[i];
     }
 }
 
@@ -503,107 +543,79 @@ static void
 bcmcnet_pdma_stats_get(struct pdma_dev *dev)
 {
     struct dev_ctrl *ctrl = &dev->ctrl;
+    struct bcmcnet_dev_stats *stats = &dev->stats;
+    struct bcmcnet_dev_stats *stats_base = &dev->stats_base;
     struct pdma_rx_queue *rxq = NULL;
     struct pdma_tx_queue *txq = NULL;
-    uint32_t packets = 0, bytes = 0, dropped = 0, errors = 0, nomems = 0, xoffs = 0;
-    uint32_t head_errors = 0, data_errors = 0, cell_errors = 0;
-    uint32_t qi;
+    uint32_t stats_size, stats_num, qi;
 
+    stats_size = sizeof(bcmcnet_rxq_stats_t);
+    stats_num = sizeof(bcmcnet_rxq_stats_t) / sizeof(uint64_t);
+    sal_memset(&stats->rxqs, 0, stats_size);
     for (qi = 0; qi < ctrl->nb_rxq; qi++) {
         rxq = (struct pdma_rx_queue *)ctrl->rx_queue[qi];
         if (!rxq) {
             continue;
         }
-        packets += rxq->stats.packets;
-        bytes += rxq->stats.bytes;
-        dropped += rxq->stats.dropped;
-        errors += rxq->stats.errors;
-        head_errors += rxq->stats.head_errors;
-        data_errors += rxq->stats.data_errors;
-        cell_errors += rxq->stats.cell_errors;
-        nomems += rxq->stats.nomems;
-        dev->stats.rxq_packets[qi] = rxq->stats.packets;
-        dev->stats.rxq_bytes[qi] = rxq->stats.bytes;
-        dev->stats.rxq_dropped[qi] = rxq->stats.dropped;
-        dev->stats.rxq_errors[qi] = rxq->stats.errors;
-        dev->stats.rxq_head_errors[qi] = rxq->stats.head_errors;
-        dev->stats.rxq_data_errors[qi] = rxq->stats.data_errors;
-        dev->stats.rxq_cell_errors[qi] = rxq->stats.cell_errors;
-        dev->stats.rxq_nomems[qi] = rxq->stats.nomems;
+        sal_memcpy(&stats->rxq[qi], &rxq->stats, stats_size);
+        bcmcnet_uint64s_add(&stats->rxqs, &stats->rxq[qi], stats_num);
+        bcmcnet_uint64s_sub(&stats->rxq[qi], &stats_base->rxq[qi], stats_num);
     }
+    bcmcnet_uint64s_sub(&stats->rxqs, &stats_base->rxqs, stats_num);
 
-    dev->stats.rx_packets = packets;
-    dev->stats.rx_bytes = bytes;
-    dev->stats.rx_dropped = dropped;
-    dev->stats.rx_errors = errors;
-    dev->stats.rx_head_errors = head_errors;
-    dev->stats.rx_data_errors = data_errors;
-    dev->stats.rx_cell_errors = cell_errors;
-    dev->stats.rx_nomems = nomems;
-
-    packets = bytes = dropped = errors = 0;
+    stats_size = sizeof(bcmcnet_txq_stats_t);
+    stats_num = sizeof(bcmcnet_txq_stats_t) / sizeof(uint64_t);
+    sal_memset(&stats->txqs, 0, stats_size);
     for (qi = 0; qi < ctrl->nb_txq; qi++) {
         txq = (struct pdma_tx_queue *)ctrl->tx_queue[qi];
         if (!txq) {
             continue;
         }
-        packets += txq->stats.packets;
-        bytes += txq->stats.bytes;
-        dropped += txq->stats.dropped;
-        errors += txq->stats.errors;
-        xoffs += txq->stats.xoffs;
-        dev->stats.txq_packets[qi] = txq->stats.packets;
-        dev->stats.txq_bytes[qi] = txq->stats.bytes;
-        dev->stats.txq_dropped[qi] = txq->stats.dropped;
-        dev->stats.txq_errors[qi] = txq->stats.errors;
-        dev->stats.txq_xoffs[qi] = txq->stats.xoffs;
+        sal_memcpy(&stats->txq[qi], &txq->stats, stats_size);
+        bcmcnet_uint64s_add(&stats->txqs, &stats->txq[qi], stats_num);
+        bcmcnet_uint64s_sub(&stats->txq[qi], &stats_base->txq[qi], stats_num);
     }
-
-    dev->stats.tx_packets = packets;
-    dev->stats.tx_bytes = bytes;
-    dev->stats.tx_dropped = dropped;
-    dev->stats.tx_errors = errors;
-    dev->stats.tx_xoffs = xoffs;
+    bcmcnet_uint64s_sub(&stats->txqs, &stats_base->txqs, stats_num);
 }
 
 /*!
  * Reset device statistics
  */
 static void
-bcmcnet_pdma_stats_reset(struct pdma_dev *dev)
+bcmcnet_pdma_stats_reset(struct pdma_dev *dev, pdma_dir_t dir)
 {
     struct dev_ctrl *ctrl = &dev->ctrl;
+    struct bcmcnet_dev_stats *stats = &dev->stats_base;
     struct pdma_rx_queue *rxq = NULL;
     struct pdma_tx_queue *txq = NULL;
-    uint32_t qi;
+    uint32_t stats_size, stats_num, qi;
 
-    sal_memset(&dev->stats, 0, sizeof(struct bcmcnet_dev_stats));
-
-    for (qi = 0; qi < ctrl->nb_rxq; qi++) {
-        rxq = (struct pdma_rx_queue *)ctrl->rx_queue[qi];
-        if (!rxq) {
-            continue;
+    if (dir == PDMA_DIR_RX || dir == PDMA_DIR_RXTX) {
+        stats_size = sizeof(bcmcnet_rxq_stats_t);
+        stats_num = sizeof(bcmcnet_rxq_stats_t) / sizeof(uint64_t);
+        sal_memset(&stats->rxqs, 0, stats_size);
+        for (qi = 0; qi < ctrl->nb_rxq; qi++) {
+            rxq = (struct pdma_rx_queue *)ctrl->rx_queue[qi];
+            if (!rxq) {
+                continue;
+            }
+            sal_memcpy(&stats->rxq[qi], &rxq->stats, stats_size);
+            bcmcnet_uint64s_add(&stats->rxqs, &stats->rxq[qi], stats_num);
         }
-        rxq->stats.packets = 0;
-        rxq->stats.bytes = 0;
-        rxq->stats.dropped = 0;
-        rxq->stats.errors = 0;
-        rxq->stats.head_errors = 0;
-        rxq->stats.data_errors = 0;
-        rxq->stats.cell_errors = 0;
-        rxq->stats.nomems = 0;
     }
 
-    for (qi = 0; qi < ctrl->nb_txq; qi++) {
-        txq = (struct pdma_tx_queue *)ctrl->tx_queue[qi];
-        if (!txq) {
-            continue;
+    if (dir == PDMA_DIR_TX || dir == PDMA_DIR_RXTX) {
+        stats_size = sizeof(bcmcnet_txq_stats_t);
+        stats_num = sizeof(bcmcnet_txq_stats_t) / sizeof(uint64_t);
+        sal_memset(&stats->txqs, 0, stats_size);
+        for (qi = 0; qi < ctrl->nb_txq; qi++) {
+            txq = (struct pdma_tx_queue *)ctrl->tx_queue[qi];
+            if (!txq) {
+                continue;
+            }
+            sal_memcpy(&stats->txq[qi], &txq->stats, stats_size);
+            bcmcnet_uint64s_add(&stats->txqs, &stats->txq[qi], stats_num);
         }
-        txq->stats.packets = 0;
-        txq->stats.bytes = 0;
-        txq->stats.dropped = 0;
-        txq->stats.errors = 0;
-        txq->stats.xoffs = 0;
     }
 }
 
@@ -681,7 +693,6 @@ bcmcnet_pdma_rx_queue_start(struct pdma_dev *dev, int queue)
 
     rxq = (struct pdma_rx_queue *)ctrl->rx_queue[queue];
     rxq->state |= PDMA_RX_QUEUE_ACTIVE;
-    rxq->state &= ~PDMA_RX_QUEUE_XOFF;
 
     return hw->hdls.chan_start(hw, rxq->chan_id);
 }
@@ -702,7 +713,6 @@ bcmcnet_pdma_rx_queue_stop(struct pdma_dev *dev, int queue)
 
     rxq = (struct pdma_rx_queue *)ctrl->rx_queue[queue];
     rxq->state &= ~PDMA_RX_QUEUE_ACTIVE;
-    rxq->state |= PDMA_RX_QUEUE_XOFF;
 
     return hw->hdls.chan_stop(hw, rxq->chan_id);
 }
@@ -723,7 +733,6 @@ bcmcnet_pdma_tx_queue_start(struct pdma_dev *dev, int queue)
 
     txq = (struct pdma_tx_queue *)ctrl->tx_queue[queue];
     txq->state |= PDMA_TX_QUEUE_ACTIVE;
-    txq->state &= ~PDMA_TX_QUEUE_XOFF;
 
     return dev->flags & PDMA_CHAIN_MODE ? SHR_E_NONE :
            hw->hdls.chan_start(hw, txq->chan_id);
@@ -745,7 +754,6 @@ bcmcnet_pdma_tx_queue_stop(struct pdma_dev *dev, int queue)
 
     txq = (struct pdma_tx_queue *)ctrl->tx_queue[queue];
     txq->state &= ~PDMA_TX_QUEUE_ACTIVE;
-    txq->state |= PDMA_TX_QUEUE_XOFF;
 
     return hw->hdls.chan_stop(hw, txq->chan_id);
 }
@@ -876,7 +884,11 @@ bcmcnet_pdma_tx_queue_intr_disable(struct pdma_dev *dev, int queue)
 
     txq = (struct pdma_tx_queue *)ctrl->tx_queue[queue];
 
-    return hw->hdls.chan_intr_disable(hw, txq->chan_id);
+    if (txq->state & PDMA_TX_QUEUE_POLL) {
+        return SHR_E_NONE;
+    } else {
+        return hw->hdls.chan_intr_disable(hw, txq->chan_id);
+    }
 }
 
 /*!
@@ -1008,8 +1020,8 @@ bcmcnet_pdma_open(struct pdma_dev *dev)
         hdl->group = gi;
         hdl->chan = chan;
         hdl->dev = dev;
-        hdl->intr_num = hw->hdls.chan_intr_num_get(hw, chan);
-        if (hdl->intr_num < 0) {
+        hdl->inum = hw->hdls.chan_intr_num_get(hw, chan);
+        if (hdl->inum < 0) {
             return SHR_E_INTERNAL;
         }
     }
