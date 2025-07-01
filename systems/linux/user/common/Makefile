@@ -100,6 +100,7 @@ USER_BDE := $(DEST_DIR)/$(USER_BDE_LOCAL)
 
 KNET_CB_LOCAL := linux-knet-cb.$(KOBJ)
 KNET_CB := $(DEST_DIR)/$(KNET_CB_LOCAL)
+
 export BUILD_BCM_GENL=0
 export BUILD_GENL_PACKET=0
 GENL_PACKET_LOCAL := genl-packet.$(KOBJ)

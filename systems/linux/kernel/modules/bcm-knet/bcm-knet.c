@@ -81,6 +81,7 @@
 #include <linux/if_vlan.h>
 #include <linux/nsproxy.h>
 
+
 MODULE_AUTHOR("Broadcom Corporation");
 MODULE_DESCRIPTION("Network Device Driver for Broadcom BCM TxRx API");
 MODULE_LICENSE("GPL");
@@ -605,7 +606,8 @@ static inline void bkn_skb_tx_timestamp(struct sk_buff *skb)
 #define PKT_TX_HDR_SIZE         16
 
 static volatile int module_initialized;
-static volatile int module_reload;
+
+static int module_reload[LINUX_BDE_MAX_DEVICES];
 
 static ibde_t *kernel_bde = NULL;
 
@@ -924,6 +926,15 @@ typedef struct bkn_switch_info_s {
 #define BKN_DNX_OIBIH_OAM_PDU_OFFSET_MSB               104
 #define BKN_DNX_OIBIH_OAM_PDU_OFFSET_NOF_BITS          8
 
+
+/* PPH fwd_domain type. */
+#define BKN_DNX_PPH_FWD_DOMAIN_TYPE_VSI                0
+#define BKN_DNX_PPH_FWD_DOMAIN_TYPE_VRF                3
+
+#define BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(_fwd_domain) (((_fwd_domain) >> 16) & 0x3)
+#define BKN_DNX_PPH_FWD_DOMAIN_ID_GET(_fwd_domain)   ((_fwd_domain) & 0xffff)
+#define BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(_fwd_domain)   (BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(_fwd_domain) == BKN_DNX_PPH_FWD_DOMAIN_TYPE_VSI)
+#define BKN_DNX_PPH_FWD_DOMAIN_IS_VRF(_fwd_domain)   (BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(_fwd_domain) == BKN_DNX_PPH_FWD_DOMAIN_TYPE_VRF)
 
 #define BKN_DPP_HDR_MAX_SIZE 40
 /* PTCH_2 */
@@ -3207,6 +3218,12 @@ bkn_match_rx_pkt(bkn_switch_info_t *sinfo, uint8_t *pkt, int pktlen,
     return NULL;
 }
 
+static bool
+bkn_netif_ok(struct net_device *dev)
+{
+    return (netif_carrier_ok(dev) && netif_running(dev));
+}
+
 static bkn_priv_t *
 bkn_netif_lookup(bkn_switch_info_t *sinfo, int id)
 {
@@ -3968,8 +3985,10 @@ bkn_dnx_packet_parse_internal(
     packet_info->internal.parsing_start_offset = fld_val;
 
     pkt_offset += BKN_DNX_INTERNAL_BASE_TYPE_12;
-    DBG_DUNE(("Internal(12-%u): FWD_DOMAIN %d, LEARN_EXT %d, FHEI_SIZE %d, LIF_EXT %d \n",
+    DBG_DUNE(("Internal(12-%u): FWD_DOMAIN 0x%x(%d,%d), LEARN_EXT %d, FHEI_SIZE %d, LIF_EXT %d \n",
                 pkt_offset, packet_info->internal.forward_domain,
+                BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(packet_info->internal.forward_domain),
+                BKN_DNX_PPH_FWD_DOMAIN_ID_GET(packet_info->internal.forward_domain),
                 learn_ext_present, fhei_size, lif_ext_type));
 
     if (fhei_size)
@@ -4371,12 +4390,12 @@ bkn_do_api_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                                         packet_info.internal.trap_id);
                 bkn_bitstream_set_field(sand_scratch_data, 16, 16,
                                         packet_info.internal.trap_qualifier);
-                bkn_bitstream_set_field(sand_scratch_data, 32, 16,
-                                    packet_info.ftmh.source_sys_port_aggregate);
-                bkn_bitstream_set_field(sand_scratch_data, 48, 16,
-                                        packet_info.internal.forward_domain);
+                bkn_bitstream_set_field(sand_scratch_data, 32, 17,
+                                        packet_info.ftmh.source_sys_port_aggregate);
                 bkn_bitstream_set_field(sand_scratch_data, 64, 2,
                                         packet_info.ftmh.action_type);
+                bkn_bitstream_set_field(sand_scratch_data, 66, 18,
+                                        packet_info.internal.forward_domain);
 
                 if (force_tagged) {
                     uint8_t *eth_hdr = pkt + pkt_hdr_size;
@@ -4386,6 +4405,8 @@ bkn_do_api_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                     if (packet_is_untagged(tpid)) {
                         int raw_packet_len = pktlen - pkt_hdr_size;
                         uint32_t vid = 0;
+                        uint32_t is_vsi = BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(packet_info.internal.forward_domain);
+                        uint32_t fwd_domain = BKN_DNX_PPH_FWD_DOMAIN_ID_GET(packet_info.internal.forward_domain);
 
                         if ((pktlen + 4) < rx_buffer_size) {
                             for (idx = (raw_packet_len - 1); idx >= 12; idx--) {
@@ -4394,9 +4415,8 @@ bkn_do_api_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                             if (ft_vid) {
                                 vid = ft_vid;
                             }
-                            else if (packet_info.internal.forward_domain) {
-                                vid = packet_info.internal.forward_domain &
-                                      0xfff;
+                            else if (is_vsi && fwd_domain) {
+                                vid = fwd_domain & 0xfff;
                             }
                             else {
                                 vid = 1;
@@ -4451,7 +4471,7 @@ bkn_do_api_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                 priv = bkn_netif_lookup(sinfo, filter->kf.dest_id);
                 if (priv) {
                     /* Check that software link is up */
-                    if (!netif_carrier_ok(priv->dev)) {
+                    if (!bkn_netif_ok(priv->dev)) {
                         sinfo->rx[chan].pkts_d_no_link++;
                         break;
                     }
@@ -4633,6 +4653,12 @@ bkn_skb_rx_netif_process(bkn_switch_info_t *sinfo, int dest_id, int chan,
 
     DBG_VERB(("Process SKB to netif %d\n", dest_id));
     priv = bkn_netif_lookup(sinfo, dest_id);
+    if (priv == NULL) {
+        DBG_VERB(("Private data is unavailable for netif %d\n", dest_id));
+        /* Handle skb on error return */
+        dev_kfree_skb_any(skb);
+        return -1;
+    }
 
     if ((priv->flags & KCOM_NETIF_F_KEEP_RX_TAG) == 0) {
         uint16_t vlan_proto;
@@ -4830,12 +4856,12 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                                         packet_info.internal.trap_id);
                 bkn_bitstream_set_field(sand_scratch_data, 16, 16,
                                         packet_info.internal.trap_qualifier);
-                bkn_bitstream_set_field(sand_scratch_data, 32, 16,
-                                    packet_info.ftmh.source_sys_port_aggregate);
-                bkn_bitstream_set_field(sand_scratch_data, 48, 16,
-                                        packet_info.internal.forward_domain);
+                bkn_bitstream_set_field(sand_scratch_data, 32, 17,
+                                        packet_info.ftmh.source_sys_port_aggregate);
                 bkn_bitstream_set_field(sand_scratch_data, 64, 2,
                                         packet_info.ftmh.action_type);
+                bkn_bitstream_set_field(sand_scratch_data, 66, 18,
+                                        packet_info.internal.forward_domain);
                 if (force_tagged) {
                     uint8_t *eth_hdr = pkt + pkt_hdr_size;
                     uint16_t tpid = 0;
@@ -4847,6 +4873,8 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                     if (packet_is_untagged(tpid)) {
                         int raw_packet_len = pktlen - pkt_hdr_size;
                         uint32_t vid = 0;
+                        uint32_t is_vsi = BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(packet_info.internal.forward_domain);
+                        uint32_t fwd_domain = BKN_DNX_PPH_FWD_DOMAIN_ID_GET(packet_info.internal.forward_domain);
 
                         if ((pktlen + 4) < rx_buffer_size) {
                             for (idx = (raw_packet_len - 1); idx >= 12; idx--) {
@@ -4855,9 +4883,8 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                             if (ft_vid) {
                                 vid = ft_vid;
                             }
-                            else if (packet_info.internal.forward_domain) {
-                                vid = packet_info.internal.forward_domain &
-                                      0xfff;
+                            else if (is_vsi && fwd_domain) {
+                                vid = fwd_domain & 0xfff;
                             }
                             else {
                                 vid = 1;
@@ -4913,7 +4940,7 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                     int ethertype;
 
                     /* Check that software link is up */
-                    if (!netif_carrier_ok(priv->dev)) {
+                    if (!bkn_netif_ok(priv->dev)) {
                         sinfo->rx[chan].pkts_d_no_link++;
                         break;
                     }
@@ -4992,7 +5019,7 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                         if (filter->kf.mirror_type == KCOM_DEST_T_NETIF) {
                             mpriv = bkn_netif_lookup(sinfo, filter->kf.mirror_id);
                             /* Clone skb for mirror_to netinf */
-                            if (mpriv && netif_carrier_ok(mpriv->dev)) {
+                            if (mpriv && bkn_netif_ok(mpriv->dev)) {
                                 mskb = skb_clone(skb, GFP_ATOMIC);
                                 if (mskb == NULL) {
                                     sinfo->rx[chan].pkts_d_no_skb++;
@@ -5031,7 +5058,7 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                         /* Clone skb for mirror_to netinf */
                         if (filter->kf.mirror_type == KCOM_DEST_T_NETIF) {
                             mpriv = bkn_netif_lookup(sinfo, filter->kf.mirror_id);
-                            if (mpriv && netif_carrier_ok(mpriv->dev)) {
+                            if (mpriv && bkn_netif_ok(mpriv->dev)) {
                                 mskb = skb_clone(skb, GFP_ATOMIC);
                                 if (mskb == NULL) {
                                     sinfo->rx[chan].pkts_d_no_skb++;
@@ -5818,7 +5845,9 @@ xgs_do_dma(bkn_switch_info_t *sinfo, int budget)
                 budget_chans++;
             }
         }
-        budget_chans = budget / budget_chans;
+        if (budget_chans) {
+            budget_chans = budget / budget_chans;
+        }
     }
 
     for (chan = 0; chan < sinfo->rx_chans; chan++) {
@@ -5888,7 +5917,9 @@ xgsm_do_dma(bkn_switch_info_t *sinfo, int budget)
                 budget_chans++;
             }
         }
-        budget_chans = budget / budget_chans;
+        if (budget_chans) {
+            budget_chans = budget / budget_chans;
+        }
     }
 
     for (chan = 0; chan < sinfo->rx_chans; chan++) {
@@ -6182,6 +6213,8 @@ xgsx_isr(bkn_switch_info_t *sinfo)
 {
     uint32_t irq_stat = 0;
     int rx_dcbs_done;
+    uint32_t ctrl = 0;
+    int chan = 0;
 
     dev_read32(sinfo, CMICX_IRQ_STATr, &irq_stat);
     if ((irq_stat & sinfo->irq_mask) == 0) {
@@ -6190,16 +6223,12 @@ xgsx_isr(bkn_switch_info_t *sinfo)
     }
 
     /* Bypass chain_done from Abort */
-    if (device_is_dnx(sinfo)) {
-        uint32_t ctrl = 0;
-        int chan = 0;
-        for (chan = 0; chan < NUM_CMICX_DMA_CHAN; chan++) {
-            if (irq_stat & CMICX_DS_CMC_CHAIN_DONE(chan)) {
-                dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
-                if (ctrl & CMICX_DC_CMC_ABORT) {
-                    DBG_IRQ(("chain %d: chain done for Abort\n", chan));
-                    return;
-                }
+    for (chan = 0; chan < NUM_CMICX_DMA_CHAN; chan++) {
+        if (irq_stat & CMICX_DS_CMC_CHAIN_DONE(chan)) {
+            dev_read32(sinfo, CMICX_DMA_CTRLr + 0x80 * chan, &ctrl);
+            if (ctrl & CMICX_DC_CMC_ABORT) {
+                DBG_IRQ(("chain %d: chain done for Abort\n", chan));
+                return;
             }
         }
     }
@@ -6413,7 +6442,6 @@ bkn_open(struct net_device *dev)
     }
 
     if (!sinfo->basedev_suspended) {
-        netif_carrier_on(dev);
         netif_start_queue(dev);
     }
 
@@ -6607,7 +6635,6 @@ bkn_stop(struct net_device *dev)
     unsigned long flags;
 
     netif_stop_queue(dev);
-    netif_carrier_off(dev);
 
     /* Check if base device */
     if (priv->id <= 0) {
@@ -6727,7 +6754,7 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
         return 0;
     }
 
-    if (!netif_carrier_ok(dev)) {
+    if (!bkn_netif_ok(dev)) {
         DBG_WARN(("Tx drop: Netif link is down.\n"));
         priv->stats.tx_dropped++;
         sinfo->tx.pkts_d_no_link++;
@@ -7812,9 +7839,9 @@ bkn_init_ndev(u8 *mac, char *name)
         strncpy(dev->name, name, IFNAMSIZ-1);
     }
     DBG_VERB(("Created Ethernet device %s.\n", dev->name));
-#if defined(CONFIG_NET_NS)
+
     bkn_dev_net_set(dev, current->nsproxy->net_ns);
-#endif
+
     /* Register the kernel Ethernet device */
     if (register_netdev(dev)) {
         DBG_WARN(("Error registering Ethernet device.\n"));
@@ -8105,7 +8132,9 @@ bkn_seq_dma_next_pos(bkn_seq_dma_iter_t *iter, loff_t pos)
 {
     bkn_switch_info_t *sinfo;
 
-    sinfo = bkn_sinfo_from_unit(iter->dev_no);
+    if ((sinfo = bkn_sinfo_from_unit(iter->dev_no)) == NULL) {
+        return -1;
+    }
     while (pos) {
         if (iter->rx_dma) {
             if (++iter->idx >= MAX_RX_DCBS + 1) {
@@ -9221,10 +9250,15 @@ bkn_create_inst(uint32 inst_id)
     for (i = 0; i < kernel_bde->num_devices(BDE_ALL_DEVICES); i++) {
         if (lkbde_is_dev_managed_by_instance(i, inst_id)) {
             sinfo = bkn_sinfo_from_unit(i);
-            spin_lock_irqsave(&sinfo->lock, flags);
-            sinfo->evt_idx = evt_idx;
-            spin_unlock_irqrestore(&sinfo->lock, flags);
-            DBG_INST(("%s d(%d) evt_idx %d \n",__FUNCTION__, i, evt_idx));
+            if (sinfo) {
+                spin_lock_irqsave(&sinfo->lock, flags);
+                sinfo->evt_idx = evt_idx;
+                spin_unlock_irqrestore(&sinfo->lock, flags);
+                DBG_INST(("%s d(%d) evt_idx %d \n",__FUNCTION__, i, evt_idx));
+            } else {
+                DBG_INST(("%s d(%d) evt_idx %d sinfo is NULL\n",
+                          __FUNCTION__, i, evt_idx));
+            }
         }
     }
     return 0;
@@ -9268,6 +9302,9 @@ bkn_knet_dev_inst_set(kcom_msg_reprobe_t *kmsg)
     struct list_head *list;
 
     sinfo = bkn_sinfo_from_unit(d);
+    if (sinfo == NULL) {
+        return -1;
+    }
 #ifdef BCM_INSTANCE_SUPPORT
     lkbde_dev_instid_get(d, &inst);
 #else
@@ -9306,21 +9343,21 @@ bkn_knet_dev_inst_set(kcom_msg_reprobe_t *kmsg)
 }
 
 static int
-bkn_knet_version(kcom_msg_version_t *kmsg, int len)
+bkn_knet_version(kcom_msg_version_t *kmsg, int len, int unit)
 {
     kmsg->hdr.type = KCOM_MSG_TYPE_RSP;
     kmsg->version = KCOM_VERSION;
     kmsg->netif_max = KCOM_NETIF_MAX;
     kmsg->filter_max = KCOM_FILTER_MAX;
-    kmsg->module_reload = module_reload;
+    kmsg->module_reload = module_reload[unit];
 
     /*
      * The module_reoad idicator set while module inserted.
      * Unset the indicatore when SDK has checked KNET version to idicate
      * the KNET module has been initialized by SDK.
      */
-    if (module_reload) {
-        module_reload = 0;
+    if (module_reload[unit]) {
+        module_reload[unit] = 0;
     }
     return sizeof(kcom_msg_version_t);
 }
@@ -9823,6 +9860,8 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
     } else {
         DBG_NDEV(("Use Shared Netif ID %d\n", id));
     }
+    spin_unlock_irqrestore(&sinfo->lock, flags);
+
     if (priv->ref_count == 1) {
         DBG_VERB(("Assigned ID %d to Ethernet device %s\n",
                   priv->id, dev->name));
@@ -9838,7 +9877,6 @@ bkn_knet_netif_create(kcom_msg_netif_create_t *kmsg, int len)
                       dev->name));
         }
     }
-    spin_unlock_irqrestore(&sinfo->lock, flags);
 
     return sizeof(*kmsg);
 }
@@ -10344,7 +10382,7 @@ bkn_handle_cmd_req(kcom_msg_t *kmsg, int len)
     case KCOM_M_VERSION:
         DBG_CMD(("KCOM_M_VERSION\n"));
         /* Return procotol version */
-        len = bkn_knet_version(&kmsg->version, len);
+        len = bkn_knet_version(&kmsg->version, len, kmsg->hdr.unit);
         break;
     case KCOM_M_HW_RESET:
         DBG_CMD(("KCOM_M_HW_RESET\n"));
@@ -10495,7 +10533,7 @@ bkn_get_next_dma_event(kcom_msg_dma_info_t *kmsg)
             continue;
         }
 
-        if (sinfo->evt_idx == -1) {
+        if (sinfo && sinfo->evt_idx == -1) {
             /* Event queue is not ready yet */
             continue;
         }
@@ -10654,11 +10692,15 @@ bkn_knet_dev_reinit(int d)
     DBG_VERB(("%s dev %d dev_state %d\n",__FUNCTION__, d, dev_state));
     if (dev_state == BDE_DEV_STATE_CHANGED) {
         sinfo = bkn_sinfo_from_unit(d);
-        cfg_api_lock(sinfo, &flags);
-        sinfo->base_addr = lkbde_get_dev_virt(d);
-        sinfo->dma_dev = lkbde_get_dma_dev(d);
-        sinfo->pdev = lkbde_get_hw_dev(d);
-        cfg_api_unlock(sinfo, &flags);
+        if (sinfo) {
+            cfg_api_lock(sinfo, &flags);
+            sinfo->base_addr = lkbde_get_dev_virt(d);
+            sinfo->dma_dev = lkbde_get_dma_dev(d);
+            sinfo->pdev = lkbde_get_hw_dev(d);
+            cfg_api_unlock(sinfo, &flags);
+        } else {
+            DBG_VERB(("%s dev %d sinfo is NULL\n",__FUNCTION__, d));
+        }
 
         dev_state = 0;
         lkbde_dev_state_set(d, dev_state);
@@ -10813,7 +10855,9 @@ _init(void)
 
     module_initialized = 1;
 
-    module_reload = 1;
+    for (idx = 0; idx < LINUX_BDE_MAX_DEVICES; idx++) {
+        module_reload[idx] = 1;
+    }
 
     return 0;
 }
