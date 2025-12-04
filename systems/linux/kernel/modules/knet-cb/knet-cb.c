@@ -1,30 +1,30 @@
 /*
- * $Copyright: 2017-2024 Broadcom Inc. All rights reserved.
- *
+ * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
- *
+ * 
  * License Option 1: GPL
- *
+ * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
  * published by the Free Software Foundation (the "GPL").
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License version 2 (GPLv2) for more details.
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 (GPLv2) along with this source code.
- *
- *
+ * 
+ * 
  * License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
- *
+ * 
  * This software is governed by the Broadcom Open Network Switch APIs license:
  * https://www.broadcom.com/products/ethernet-connectivity/software/opennsa $
- *
- *
+ * 
+ * 
  */
 
 /*
@@ -113,7 +113,11 @@ static void strip_vlan_tag(struct sk_buff *skb);
 static int  get_tag_status(int dcb_type, void *meta);
 static struct sk_buff *strip_tag_rx_cb(struct sk_buff *skb, int dev_no, void *meta);
 static struct sk_buff *strip_tag_tx_cb(struct sk_buff *skb, int dev_no, void *meta);
+<<<<<<< ours
 int  strip_tag_filter_cb(uint8_t * pkt, int size, int dev_no, void *meta,
+=======
+int strip_tag_filter_cb(uint8_t * pkt, int size, int dev_no, void *meta,
+>>>>>>> theirs
                                 int chan, kcom_filter_t * kf);
 static int  _pprint(struct seq_file *m);
 static int  _cleanup(void);
@@ -260,18 +264,18 @@ strip_tag_rx_cb(struct sk_buff *skb, int dev_no, void *meta)
             uint32 *meta_buffer = (uint32 *)meta;
             uint32 forward_domain = meta_buffer[1] & 0xffff;
             add_vlan_tag(skb, forward_domain);
-        }
-        strip_stats.skipped++;
-        return skb;
     }
+        strip_stats.skipped++;
+    return skb;
+}
 
     /* SAI strip implies always strip. If the packet is untagged or
        inner taged, SDK adds a .1q tag, so we need to strip tag
        anyway */
     if (filter_flags == FILTER_TAG_STRIP)
-    {
+{
         strip_tag = 1;
-    }
+        }
 
 
 
@@ -284,8 +288,8 @@ strip_tag_rx_cb(struct sk_buff *skb, int dev_no, void *meta)
 #endif
     if (tag_status < 0) {
         /* Unsupported DCB type */
-        return skb;
-    }
+    return skb;
+}
 
     if (filter_flags == FILTER_TAG_ORIGINAL)
     {
@@ -339,7 +343,7 @@ strip_tag_filter_cb(uint8_t * pkt, int size, int dev_no, void *meta,
 #ifdef BCM_DNX_SUPPORT
 static int
 knet_filter_cb(uint8_t * pkt, int size, int dev_no, void *meta,
-                     int chan, kcom_filter_t *kf)
+               int chan, kcom_filter_t *kf)
 {
     /* check for filter callback handler */
 #ifdef PSAMPLE_SUPPORT
