@@ -389,8 +389,6 @@ shbde_iproc_pci_read(shbde_hal_t *shbde, void *iproc_regs,
 
     /* Look for matching sub-window */
     for (idx = 0; idx < SHBDE_NUM_IPROC_SUBWIN; idx++) {
-<<<<<<< ours
-=======
         if (idx == 7 && icfg->no_subwin_remap) {
             /*
              * If sub-window remapping is not permitted, issue a
@@ -401,7 +399,6 @@ shbde_iproc_pci_read(shbde_hal_t *shbde, void *iproc_regs,
             LOG_WARN(shbde, "No matching PCI sub-window for", addr);
             break;
         }
->>>>>>> theirs
         if (icfg->subwin_base[idx] == subwin_base) {
             reg = ROFFS(iproc_regs, idx * 0x1000 + (addr & 0xfff));
             break;
@@ -410,13 +407,6 @@ shbde_iproc_pci_read(shbde_hal_t *shbde, void *iproc_regs,
 
     /* No matching sub-window, reuse the sub-window 7 */
     if (reg == 0) {
-<<<<<<< ours
-        if (icfg->no_subwin_remap) {
-            LOG_WARN(shbde, "Attempt to remap PCI sub-window for", addr);
-            return 0;
-        }
-=======
->>>>>>> theirs
         /* Update base address for sub-window 7 */
         subwin_base |= 1; /* Valid bit */
         reg = ROFFS(iproc_regs, BAR0_PAXB_IMAP0_7);
@@ -470,8 +460,6 @@ shbde_iproc_pci_write(shbde_hal_t *shbde, void *iproc_regs,
 
     /* Look for matching sub-window */
     for (idx = 0; idx < SHBDE_NUM_IPROC_SUBWIN; idx++) {
-<<<<<<< ours
-=======
         if (idx == 7 && icfg->no_subwin_remap) {
             /*
              * If sub-window remapping is not permitted, issue a
@@ -482,7 +470,6 @@ shbde_iproc_pci_write(shbde_hal_t *shbde, void *iproc_regs,
             LOG_WARN(shbde, "No matching PCI sub-window for", addr);
             break;
         }
->>>>>>> theirs
         if (icfg->subwin_base[idx] == subwin_base) {
             reg = ROFFS(iproc_regs, idx * 0x1000 + (addr & 0xfff));
             break;
@@ -491,13 +478,6 @@ shbde_iproc_pci_write(shbde_hal_t *shbde, void *iproc_regs,
 
     /* No matching sub-window, reuse the sub-window 7 */
     if (reg == 0) {
-<<<<<<< ours
-        if (icfg->no_subwin_remap) {
-            LOG_WARN(shbde, "Attempt to remap PCI sub-window for", addr);
-            return;
-        }
-=======
->>>>>>> theirs
         /* Update base address for sub-window 7 */
         subwin_base |= 1; /* Valid bit */
         reg = ROFFS(iproc_regs, BAR0_PAXB_IMAP0_7);
