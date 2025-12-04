@@ -73,16 +73,12 @@ else ifeq (1,$(GCC_13_1_0))
     endif
 else ifeq (1,$(GCC_14_1_0))
     export GCCVER := 14.1.0
-<<<<<<< HEAD
     TOOLCHAIN_DIR = /tools/oss/packages/x86_64-rhel$(RHEL_VERSION)/gcc/$(GCCVER)
     #
     # We do cast 'int' to pointers in include/sal/types.h. This is
     # intentional and OK
     #
     OPT_CFLAGS += -Wno-error=pointer-to-int-cast
-=======
-    TOOLCHAIN_DIR = /tools/oss/packages/x86_64-rhel7/gcc/$(GCCVER)
->>>>>>> 06f087f (sdk 6.5.32)
     ifneq ($(DEBUG_OPTIMIZE),FALSE)
     # {
       # These flags are required for -O2 'optimized' compilation
@@ -94,20 +90,9 @@ else ifeq (1,$(GCC_14_1_0))
     endif
 else
     export GCCVER := 11.2.0
-<<<<<<< HEAD
     TOOLCHAIN_DIR = /tools/oss/packages/x86_64-rhel$(RHEL_VERSION)/gcc/$(GCCVER)
 endif
 
-=======
-    TOOLCHAIN_DIR = /projects/ntsw-tools/linux/gcc/11.2.0-x86_64
-endif
-
-#The LCOV tool is not compatible with GCC version 9.x and newer, thus we are forced to compile with older one.
-ifeq (1,$(GCOV))
-  use_gcc_8_1_0 = 1
-endif
-
->>>>>>> 06f087f (sdk 6.5.32)
 #Valgrind does not have symbolic traceback on newer gcc versions
 ifeq (1,$(VALGRIND_SUPPORT))
   use_gcc_8_1_0 = 1
@@ -124,13 +109,9 @@ endif
 
 BINUTILS_DIR = /tools/oss/packages/x86_64-rhel$(RHEL_VERSION)/binutils/$(BINUTILSVER)/bin
 export TCL860 := 1
-<<<<<<< HEAD
 $(info INFO from make/Makefile.linux-x86-5_10. GCCVER is $(GCCVER). BINUTILSVER is $(BINUTILSVER). TOOLCHAIN_DIR is $(TOOLCHAIN_DIR))
 
 export LIBNSL_DEPRECATED := 1
-=======
-$(info INFO from make/Makefile.linux-x86-5_10. GCCVER is $(GCCVER). BINUTILSVER is $(BINUTILSVER))
->>>>>>> 06f087f (sdk 6.5.32)
 
 # For GCC versions >= 4.7
 USE_GCC_TOOLS := 1
