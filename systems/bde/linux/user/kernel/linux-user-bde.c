@@ -251,8 +251,6 @@ LKM_MOD_PARAM(force_mask_irq, "i", int, (S_IRUGO | S_IWUSR));
 MODULE_PARM_DESC(force_mask_irq, "Force mask interrupts when pcie remove (default 0)");
 #endif
 
-<<<<<<< ours
-=======
 /* Periodically check for pending interrupts when interrupt handler is idle */
 static int intr_pending_check = 1;
 LKM_MOD_PARAM(intr_pending_check, "i", int, (S_IRUGO | S_IWUSR));
@@ -260,7 +258,6 @@ MODULE_PARM_DESC(intr_pending_check,
 "Check for pending interrupts periodically (default 1).");
 
 
->>>>>>> theirs
 static ibde_t *user_bde = NULL;
 
 typedef void (*isr_f)(void *);

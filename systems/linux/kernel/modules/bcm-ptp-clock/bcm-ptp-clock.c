@@ -1186,13 +1186,10 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
             switch (cmd) {
                 case BKSYNC_GET_TSTIME:
                 case BKSYNC_GETTIME:
-<<<<<<< ours
-=======
 #ifdef BDE_EDK_SUPPORT
                 case BKSYNC_PTP_TOD_GET:
                 case BKSYNC_NTP_TOD_GET:
 #endif
->>>>>>> theirs
 #ifndef BDE_EDK_SUPPORT
                     {
                         u64 d0 = 0ULL;
@@ -1216,11 +1213,7 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
                     }
                     break;
 #else
-<<<<<<< ours
-                    bksync_hostcmd_data_op(0, (u64 *)data0, (u64 *)data1);
-=======
                     bksync_hostcmd_data_op(dev_no, 0, (u64 *)data0, (u64 *)data1);
->>>>>>> theirs
                     break;
 #endif
                 case BKSYNC_BROADSYNC:

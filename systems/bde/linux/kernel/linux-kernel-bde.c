@@ -1280,24 +1280,7 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, BCM56801_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56802_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56803_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-<<<<<<< ours
-    { BROADCOM_VENDOR_ID, BCM56630_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56634_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56636_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56638_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56639_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56538_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56520_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56521_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56522_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56524_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56526_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56534_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56331_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56333_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-=======
-    { BROADCOM_VENDOR_ID, BCM56534_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
->>>>>>> theirs
     { BROADCOM_VENDOR_ID, BCM56334_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56320_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56321_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
@@ -1397,18 +1380,6 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, BCM56467_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56468_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56246_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-<<<<<<< ours
-    { BROADCOM_VENDOR_ID, BCM56850_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56851_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56852_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56853_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56854_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56855_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56834_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56750_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56830_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-=======
->>>>>>> theirs
     { BROADCOM_VENDOR_ID, BCM55440_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM55441_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56060_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
@@ -1784,8 +1755,6 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, Q3N_ORIG_DEVICE_ID + 2, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, Q3N_ORIG_DEVICE_ID + 3, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, Q3N_ORIG_DEVICE_ID + 4, PCI_ANY_ID, PCI_ANY_ID },
-<<<<<<< ours
-=======
 #endif
 #ifdef BCM_JERICHO_4_SUPPORT
     { BROADCOM_VENDOR_ID, JERICHO4_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
@@ -1808,7 +1777,6 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, Q4_DEVICE_ID + 7, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, Q4_DEVICE_ID + 8, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, Q4_DEVICE_ID + 9, PCI_ANY_ID, PCI_ANY_ID },
->>>>>>> theirs
 #endif
 
 #ifdef BCM_Q4D_SUPPORT
@@ -2985,15 +2953,9 @@ _pci_probe(struct pci_dev *dev, const struct pci_device_id *ent)
                                           &icfg->cmic_ver, &icfg->cmic_rev);
 
 #ifdef BCM_Q3A_SUPPORT
-<<<<<<< ours
-        if (((ctrl->bde_dev.device & 0xfff0) == 0x8400) && (icfg->iproc_ver == 20)) {
-            /* Workaround for conflicting between Q3u,n devices and Greyhound */
-            ctrl->bde_dev.device |= 0xA0;       /* 0x840x -> 0x84ax */
-=======
         if (((ctrl->bde_dev.device & DNXC_DEVID_FAMILY_MASK) == Q3U_ORIG_DEVICE_ID) && (icfg->iproc_ver == 20)) {
             /* Workaround for conflicting between Q3u,n devices and Greyhound */
             ctrl->bde_dev.device |= Q3U_DEVICE_ID ^ Q3U_ORIG_DEVICE_ID; /* 0x840x -> 0x84ax */
->>>>>>> theirs
 
             if (debug >= 2) {
                 gprintk("new dev ID = 0x%x\n", ctrl->bde_dev.device);

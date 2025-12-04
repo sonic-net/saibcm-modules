@@ -952,8 +952,6 @@ typedef struct bkn_switch_info_s {
 #define BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(_fwd_domain)   (BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(_fwd_domain) == BKN_DNX_PPH_FWD_DOMAIN_TYPE_VSI)
 #define BKN_DNX_PPH_FWD_DOMAIN_IS_VRF(_fwd_domain)   (BKN_DNX_PPH_FWD_DOMAIN_TYPE_GET(_fwd_domain) == BKN_DNX_PPH_FWD_DOMAIN_TYPE_VRF)
 
-<<<<<<< ours
-=======
 #define BKN_DNX_INGRESS_TRAP_ID_TRAP_OAM_LEVEL       (162)
 #define BKN_DNX_INGRESS_TRAP_ID_TRAP_OAM_PASSIVE     (172)
 
@@ -961,7 +959,6 @@ typedef struct bkn_switch_info_s {
 #define BKN_DNX_SPA_MODE_17_BITS                      (1)
 #define BKN_DNX_SPA_MODE_18_BITS                      (2)
 
->>>>>>> theirs
 #define BKN_DPP_HDR_MAX_SIZE 40
 /* PTCH_2 */
 #define BKN_DPP_PTCH_2_SIZE         2
@@ -4997,131 +4994,9 @@ bkn_do_api_rx(bkn_switch_info_t *sinfo, int chan, int budget)
 
         /* Minimun size: header_size + MACs + VLAN + ETH_TYPE */
         if (pktlen > pkt_hdr_size + 18) {
-<<<<<<< ours
-            if (device_is_sand(sinfo)) {
-                bkn_bitstream_set_field(sand_scratch_data, 0,  16,
-                                        packet_info.internal.trap_id);
-                bkn_bitstream_set_field(sand_scratch_data, 16, 16,
-                                        packet_info.internal.trap_qualifier);
-                bkn_bitstream_set_field(sand_scratch_data, 32, 17,
-                                        packet_info.ftmh.source_sys_port_aggregate);
-                bkn_bitstream_set_field(sand_scratch_data, 64, 2,
-                                        packet_info.ftmh.action_type);
-                bkn_bitstream_set_field(sand_scratch_data, 66, 18,
-                                        packet_info.internal.forward_domain);
-
-                if (force_tagged) {
-                    uint8_t *eth_hdr = pkt + pkt_hdr_size;
-                    uint16_t tpid = 0;
-
-                    tpid = PKT_U16_GET(eth_hdr, 12);
-                    if (packet_is_untagged(tpid)) {
-                        int raw_packet_len = pktlen - pkt_hdr_size;
-                        uint32_t vid = 0;
-                        uint32_t is_vsi = BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(packet_info.internal.forward_domain);
-                        uint32_t fwd_domain = BKN_DNX_PPH_FWD_DOMAIN_ID_GET(packet_info.internal.forward_domain);
-
-                        if ((pktlen + 4) < rx_buffer_size) {
-                            for (idx = (raw_packet_len - 1); idx >= 12; idx--) {
-                                eth_hdr[idx+4] = eth_hdr[idx];
-                            }
-                            if (ft_vid) {
-                                vid = ft_vid;
-                            }
-                            else if (is_vsi && fwd_domain) {
-                                vid = fwd_domain & 0xfff;
-                            }
-                            else {
-                                vid = 1;
-                            }
-                            DBG_DUNE(("add vlan tag (%d) to untagged packets\n",
-                                      vid));
-
-                            eth_hdr[12] = (ft_tpid >> 8) & 0xff;
-                            eth_hdr[13] = ft_tpid & 0xff;
-                            eth_hdr[14] = (((ft_pri & 0x7) << 5) |
-                                           ((ft_cfi & 0x1) << 4) |
-                                           ((vid >> 8) & 0xf)) & 0xff;
-                            eth_hdr[15] = vid & 0xff;
-                            /* Reset packet length in DCB */
-                            pktlen += 4;
-                            bkn_dump_pkt(pkt, pktlen, XGS_DMA_RX_CHAN);
-                            dcb[sinfo->dcb_wsize-1] &= ~SOC_DCB_KNET_COUNT_MASK;
-                            dcb[sinfo->dcb_wsize-1] |= pktlen &
-                                                       SOC_DCB_KNET_COUNT_MASK;
-                        }
-                    }
-                }
-            }
-
-            if (device_is_sand(sinfo)) {
-                match_data = sand_scratch_data;
-            } else {
-                match_data = meta;
-            }
-            filter = bkn_match_rx_pkt(sinfo, pkt + pkt_hdr_size,
-                                      pktlen - pkt_hdr_size, match_data,
-                                      chan, &cbf);
-
-            if ((dcb[sinfo->dcb_wsize-1] & 0xf0000) != 0x30000) {
-                /* Fragment or error */
-                if (filter && filter->kf.mask.w[err_woff] == 0) {
-                    /* Drop unless DCB status is part of filter */
-                    filter = NULL;
-                }
-            }
-        }
-        drop_api = 1;
-        if (filter) {
-            DBG_FLTR(("Match filter ID %d\n", filter->kf.id));
-            switch (filter->kf.dest_type) {
-            case KCOM_DEST_T_API:
-                DBG_FLTR(("Send to Rx API\n"));
-                sinfo->rx[chan].pkts_f_api++;
-                drop_api = 0;
-                break;
-            case KCOM_DEST_T_NETIF:
-                priv = bkn_netif_lookup(sinfo, filter->kf.dest_id);
-                if (priv) {
-                    /* Check that software link is up */
-                    if (!bkn_netif_ok(priv->dev)) {
-                        sinfo->rx[chan].pkts_d_no_link++;
-                        break;
-                    }
-
-                    pkt += pkt_hdr_size;
-                    pktlen -= pkt_hdr_size;
-
-                    /* Add 2 bytes for IP header alignment (see below) */
-                    if (device_is_sand(sinfo)) {
-                        skb = dev_alloc_skb(pktlen + RCPU_HDR_SIZE + pkt_hdr_size + 2);
-                        if (skb == NULL) {
-                            sinfo->rx[chan].pkts_d_no_skb++;
-                            break;
-                        }
-                        skb_reserve(skb, RCPU_HDR_SIZE + pkt_hdr_size);
-                    } else {
-                        skb = dev_alloc_skb(pktlen + RCPU_RX_ENCAP_SIZE + 2);
-                        if (skb == NULL) {
-                            sinfo->rx[chan].pkts_d_no_skb++;
-                            break;
-                        }
-                        skb_reserve(skb, RCPU_RX_ENCAP_SIZE);
-                    }
-
-                    DBG_FLTR(("Send to netif %d (%s)\n",
-                              priv->id, priv->dev->name));
-                    sinfo->rx[chan].pkts_f_netif++;
-                    skb->dev = priv->dev;
-                    skb_reserve(skb, 2);    /* 16 byte align the IP fields. */
-
-                    /* Save for RCPU before stripping tag */
-                    ethertype = PKT_U16_GET(pkt, 16);
-=======
             bkn_rx_filter_info_t rfi;
             bkn_match_rx_pkt_params_t match_params, *mp = &match_params;
             bkn_api_rx_params_t api_params, *ap = &api_params;
->>>>>>> theirs
 
             bkn_do_rx_match_pre_process(sinfo, dcb, pkt, &pktlen, pkt_hdr_size,
                                         0, 0, &packet_info, sand_scratch_data);
@@ -5604,7 +5479,6 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                     meta = (uint32_t *)skb->data;
                     for (idx = 0; idx < BYTES2WORDS(metalen); idx++) {
                         dcb[idx + 2] = ntohl(meta[idx]);
-<<<<<<< ours
                     }
                     skip_hdrlen = metalen;
                 }
@@ -5613,120 +5487,6 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
             }
             pkt_hdr_size = sinfo->pkt_hdr_size;
         }
-
-        /* Minimun size: header_size + MACs + VLAN + ETH_TYPE */
-        if (pktlen > pkt_hdr_size + 18) {
-            if (device_is_sand(sinfo)) {
-                bkn_bitstream_set_field(sand_scratch_data, 0,  16,
-                                        packet_info.internal.trap_id);
-                bkn_bitstream_set_field(sand_scratch_data, 16, 16,
-                                        packet_info.internal.trap_qualifier);
-                bkn_bitstream_set_field(sand_scratch_data, 32, 17,
-                                        packet_info.ftmh.source_sys_port_aggregate);
-                bkn_bitstream_set_field(sand_scratch_data, 64, 2,
-                                        packet_info.ftmh.action_type);
-                bkn_bitstream_set_field(sand_scratch_data, 66, 18,
-                                        packet_info.internal.forward_domain);
-                if (force_tagged) {
-                    uint8_t *eth_hdr = pkt + pkt_hdr_size;
-                    uint16_t tpid = 0;
-
-                    if (skip_hdrlen > 0) {
-                        eth_hdr += eth_offset;
-                    }
-                    tpid = PKT_U16_GET(eth_hdr, 12);
-                    if (packet_is_untagged(tpid)) {
-                        int raw_packet_len = pktlen - pkt_hdr_size;
-                        uint32_t vid = 0;
-                        uint32_t is_vsi = BKN_DNX_PPH_FWD_DOMAIN_IS_VSI(packet_info.internal.forward_domain);
-                        uint32_t fwd_domain = BKN_DNX_PPH_FWD_DOMAIN_ID_GET(packet_info.internal.forward_domain);
-
-                        if ((pktlen + 4) < rx_buffer_size) {
-                            for (idx = (raw_packet_len - 1); idx >= 12; idx--) {
-                                eth_hdr[idx+4] = eth_hdr[idx];
-                            }
-                            if (ft_vid) {
-                                vid = ft_vid;
-                            }
-                            else if (is_vsi && fwd_domain) {
-                                vid = fwd_domain & 0xfff;
-                            }
-                            else {
-                                vid = 1;
-                            }
-                            DBG_DUNE(("add vlan tag (%d) to untagged packets\n",
-                                      vid));
-                            eth_hdr[12] = (ft_tpid >> 8) & 0xff;
-                            eth_hdr[13] = ft_tpid & 0xff;
-                            eth_hdr[14] = (((ft_pri & 0x7) << 5) |
-                                           ((ft_cfi & 0x1) << 4) |
-                                           ((vid >> 8) & 0xf)) & 0xff;
-                            eth_hdr[15] = vid & 0xff;
-                            /* reset packet length in DCB */
-                            pktlen += 4;
-                            bkn_dump_pkt(pkt, pktlen, XGS_DMA_RX_CHAN);
-                            dcb[sinfo->dcb_wsize-1] &= ~SOC_DCB_KNET_COUNT_MASK;
-                            dcb[sinfo->dcb_wsize-1] |= pktlen &
-                                                       SOC_DCB_KNET_COUNT_MASK;
-                        }
-=======
->>>>>>> theirs
-                    }
-                    skip_hdrlen = metalen;
-                }
-                meta = dcb;
-                err_woff = sinfo->dcb_wsize - 1;
-            }
-            pkt_hdr_size = sinfo->pkt_hdr_size;
-        }
-<<<<<<< ours
-        DBG_PKT(("Rx packet (%d bytes).\n", pktlen));
-        if (filter) {
-            DBG_FLTR(("Match filter ID %d\n", filter->kf.id));
-            switch (filter->kf.dest_type) {
-            case KCOM_DEST_T_API:
-                DBG_FLTR(("Send to Rx API\n"));
-                sinfo->rx[chan].pkts_f_api++;
-                bkn_api_rx_copy_from_skb(sinfo, chan, desc, 0);
-                break;
-            case KCOM_DEST_T_NETIF:
-                priv = bkn_netif_lookup(sinfo, filter->kf.dest_id);
-                if (priv) {
-                    int ethertype;
-
-                    /* Check that software link is up */
-                    if (!bkn_netif_ok(priv->dev)) {
-                        sinfo->rx[chan].pkts_d_no_link++;
-                        break;
-                    }
-                    DBG_FLTR(("Send to netif %d (%s)\n",
-                              priv->id, priv->dev->name));
-                    sinfo->rx[chan].pkts_f_netif++;
-
-                    if ((filter->kf.mirror_type == KCOM_DEST_T_API) ||
-                        dbg_pkt_enable) {
-                        sinfo->rx[chan].pkts_m_api++;
-                        bkn_api_rx_copy_from_skb(sinfo, chan, desc,
-                                                 priv->rx_hwts);
-                    }
-
-                    if (device_is_sand(sinfo)) {
-                        /* CRC has been stripped on Dune*/
-                        skb_put(skb, pktlen);
-                    } else {
-                        skb_put(skb, pktlen - 4); /* Strip CRC */
-                    }
-
-                    skb_pull(skb, (pkt_hdr_size + skip_hdrlen));
-
-                    /* Optional SKB updates */
-                    KNET_SKB_CB(skb)->dcb_type = sinfo->dcb_type & 0xFFFF;
-                    /* Do Rx timestamping */
-                    if (priv->rx_hwts) {
-                        if ((bkn_hw_tstamp_rx_set(sinfo, priv->phys_port, skb,
-                                                  meta)) >= 0) {
-=======
->>>>>>> theirs
 
         /* Minimun size: header_size + MACs + VLAN + ETH_TYPE */
         if (pktlen > pkt_hdr_size + 18) {
@@ -5738,27 +5498,11 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
                                         skip_hdrlen, eth_offset,
                                         &packet_info, sand_scratch_data);
 
-<<<<<<< ours
-                    if (mirror_local) {
-                        /* Clone skb before processing netif specific config. */
-                        if (filter->kf.mirror_type == KCOM_DEST_T_NETIF) {
-                            mpriv = bkn_netif_lookup(sinfo, filter->kf.mirror_id);
-                            /* Clone skb for mirror_to netinf */
-                            if (mpriv && bkn_netif_ok(mpriv->dev)) {
-                                mskb = skb_clone(skb, GFP_ATOMIC);
-                                if (mskb == NULL) {
-                                    sinfo->rx[chan].pkts_d_no_skb++;
-                                }
-                            }
-                        }
-                    }
-=======
             /* Fragment or error */
             is_err = ((dcb[sinfo->dcb_wsize-1] & 0xf0000) != 0x30000) ? 1 : 0;
             if (is_err) {
                 priv->stats.rx_errors++;
             }
->>>>>>> theirs
 
             mp->pkt = skb->data + pkt_hdr_size + skip_hdrlen;
             mp->pktlen = pktlen - pkt_hdr_size;
@@ -5766,67 +5510,6 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
             mp->is_err = is_err;
             mp->err_woff = err_woff;
 
-<<<<<<< ours
-                    if (mirror_local) {
-                        if (mskb) {
-                            /* Process mirorr_to netif specific config. */
-                            if (bkn_skb_rx_netif_process(sinfo,
-                                                         filter->kf.mirror_id,
-                                                         chan, mskb, filter,
-                                                         rx_cb_meta, meta,
-                                                         pkt_hdr_size,
-                                                         pktlen, ethertype)){
-                                desc->skb = NULL;
-                                break;
-                            }
-                        }
-                    } else {
-                        /*
-                         * Clone skb processed with original netif specific
-                         * config.
-                         */
-                        /* Clone skb for mirror_to netinf */
-                        if (filter->kf.mirror_type == KCOM_DEST_T_NETIF) {
-                            mpriv = bkn_netif_lookup(sinfo, filter->kf.mirror_id);
-                            if (mpriv && bkn_netif_ok(mpriv->dev)) {
-                                mskb = skb_clone(skb, GFP_ATOMIC);
-                                if (mskb == NULL) {
-                                    sinfo->rx[chan].pkts_d_no_skb++;
-                                } else {
-                                    mpriv->stats.rx_packets++;
-                                    mpriv->stats.rx_bytes += mskb->len;
-                                    mskb->dev = mpriv->dev;
-                                    if (filter->kf.mirror_proto) {
-                                        mskb->protocol = filter->kf.mirror_proto;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (mskb) {
-                        /* Send up to mirror_to netif */
-                        sinfo->rx[chan].pkts_m_netif++;
-                        /*
-                        * Disable configuration API while the spinlock
-                        * is released.
-                        */
-                        sinfo->cfg_api_locked = 1;
-
-                        /* Unlock while calling up network stack */
-                        spin_unlock(&sinfo->lock);
-                        if (use_napi) {
-                            netif_receive_skb(mskb);
-                        } else {
-                            netif_rx(mskb);
-                        }
-                        spin_lock(&sinfo->lock);
-                        /*
-                        * Re-enable configuration API once the spinlock
-                        * is regained.
-                        */
-                        sinfo->cfg_api_locked = 0;
-                    }
-=======
             sp->pkt = pkt;
             sp->pktlen = pktlen;
             sp->pkt_hdr_size = pkt_hdr_size;
@@ -5834,7 +5517,6 @@ bkn_do_skb_rx(bkn_switch_info_t *sinfo, int chan, int budget)
             sp->meta = meta;
             sp->sand_scratch_data = sand_scratch_data;
             sp->desc = desc;
->>>>>>> theirs
 
             rfi.match_params = mp;
             rfi.process_params = (void *)sp;
