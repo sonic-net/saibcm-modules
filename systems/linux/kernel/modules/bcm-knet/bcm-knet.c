@@ -3255,12 +3255,6 @@ bkn_netif_ok(struct net_device *dev)
     return (netif_carrier_ok(dev) && netif_running(dev));
 }
 
-static bool
-bkn_netif_ok(struct net_device *dev)
-{
-    return (netif_carrier_ok(dev) && netif_running(dev));
-}
-
 static bkn_priv_t *
 bkn_netif_lookup(bkn_switch_info_t *sinfo, int id)
 {
