@@ -1,0 +1,19 @@
+GPL source for SDK Linux kernel modules
+---------------------------------------
+
+Build commands:
+cd gpl_lkm_folder
+export SDK=`pwd`
+make -C $SDK/systems/linux/user/<platform>
+
+Examples:
+
+#Build all DNX and DNXF LKM for kernel version 5.10 on Intel GTS
+cd gpl_lkm_folder
+export SDK=`pwd`
+make -C $SDK/systems/linux/user/x86-5_10/ ALL_DNX_CHIPS=1
+
+#Build with additional flags
+cd gpl_lkm_folder
+export SDK=`pwd`
+make -C $SDK/systems/linux/user/x86-5_10/ ADD_TO_KCFLAGS="-DBCM_INSTANCE_SUPPORT"
