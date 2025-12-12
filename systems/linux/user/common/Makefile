@@ -1,6 +1,7 @@
 # -*- Makefile -*-
 # $Id: Makefile,v 1.4 Broadcom SDK $
-# $Copyright: 2017-2024 Broadcom Inc. All rights reserved.
+#
+# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
 # 
 # Permission is granted to use, copy, modify and/or distribute this
 # software under either one of the licenses below.
@@ -174,7 +175,6 @@ endif
 ifdef BUILD_PSAMPLE
 ADD_TO_CFLAGS += -DPSAMPLE_SUPPORT
 endif
-
 ADD_TO_CFLAGS += -I$(SDK)/systems/linux/kernel/modules/include
 COND_KNET_LIBS = libuser.$(libext)
 endif
@@ -198,7 +198,6 @@ endif
 ADD_TO_CFLAGS += -I$(SDK)/systems/bde/linux/include
 
 CFLAGS += $(ADD_TO_CFLAGS)
-
 #SAI_FIXUP
 CFLAGS:=$(filter-out -fPIC, $(CFLAGS))
 
