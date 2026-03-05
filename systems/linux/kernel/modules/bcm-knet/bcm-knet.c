@@ -7123,6 +7123,7 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
     uint8_t cpu_channel = 0;
     int headroom, tailroom;
     int ptp_transport = 0;
+    int tx_dcbs_done = 0;
 
     DBG_VERB(("Netif Tx(%s): Len=%d priv->id=%d\n", dev->name, skb->len, priv->id));
 
@@ -7148,6 +7149,8 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
     }
 
     spin_lock_irqsave(&sinfo->lock, flags);
+
+    tx_dcbs_done = bkn_do_tx(sinfo);
 
     if (sinfo->tx.free > 1) {
         bkn_desc_info_t *desc = &sinfo->tx.desc[sinfo->tx.cur];
