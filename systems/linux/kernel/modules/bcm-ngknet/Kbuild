@@ -1,0 +1,60 @@
+# -*- Kbuild -*-
+#
+# Linux KNET module.
+#
+# $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
+# 
+# Permission is granted to use, copy, modify and/or distribute this
+# software under either one of the licenses below.
+# 
+# License Option 1: GPL
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2, as
+# published by the Free Software Foundation (the "GPL").
+# 
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License version 2 (GPLv2) for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# version 2 (GPLv2) along with this source code.
+# 
+# 
+# License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
+# 
+# This software is governed by the Broadcom Open Network Switch APIs license:
+# https://www.broadcom.com/products/ethernet-connectivity/software/opennsa $
+# 
+# 
+#
+
+obj-m := linux-ngknet.o
+
+ccflags-y := $(KNET_CPPFLAGS) $(LKM_CFLAGS) $(LKM_CPPFLAGS) \
+             -I$(SDK)/include/ \
+             -I$(SDK)/src/bcm/common/pktio/bcmdrd/include \
+             -I$(SDK)/systems/bde/linux/include \
+             -I$(SDK)/systems/linux/kernel/modules/bcm-ngknet/include \
+             -I$(SDK)/systems/linux/kernel/modules/bcm-ngknet/generated/include \
+             -I$(SDK)/systems/linux/kernel/modules/bcm-ngknet/generated
+
+linux-ngknet-y := $(CHIP_OBJS) \
+                  bcmcnet_cmicx_pdma_hw.o \
+                  bcmcnet_cmicx_pdma_rxtx.o \
+                  bcmcnet_cmicr_pdma_hw.o \
+                  bcmcnet_cmicr_pdma_rxtx.o \
+                  bcmcnet_cmicr2_pdma_rxtx.o \
+                  bcmcnet_core.o \
+                  bcmcnet_dev.o \
+                  bcmcnet_rxtx.o \
+                  ngknet_buff.o \
+                  ngknet_callback.o \
+                  ngknet_extra.o \
+                  ngknet_linux.o \
+                  ngknet_main.o \
+                  ngknet_procfs.o \
+                  ngknet_ptp.o \
+                  ngknet_adapter.o \
+                  ngknet_parser.o
