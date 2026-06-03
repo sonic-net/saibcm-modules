@@ -1,7 +1,7 @@
 /*
  * $Id: gmodule.c,v 1.20 Broadcom SDK $
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.

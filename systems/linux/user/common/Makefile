@@ -1,7 +1,7 @@
 # -*- Makefile -*-
 # $Id: Makefile,v 1.4 Broadcom SDK $
 #
-# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+# $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
 # 
 # Permission is granted to use, copy, modify and/or distribute this
 # software under either one of the licenses below.
@@ -70,6 +70,7 @@ KERN_BLDROOT=${SDK}/${SDKBUILD}/${BLDCONFIG}/$(kernel-override)$(bldroot_suffix)
 else
 ifdef SDK_OUTDIR
 KERN_BLDROOT=${SDK_OUTDIR}/${SDKBUILD}/$(kernel-override)$(bldroot_suffix)
+OUTPUT_DIR=${SDK_OUTDIR}/${SDKBUILD}
 else
 KERN_BLDROOT=${SDK}/${SDKBUILD}/$(kernel-override)$(bldroot_suffix)
 endif
@@ -91,6 +92,16 @@ endif
 
 ifeq ($(DEST_DIR),)
 DEST_DIR=${BLDDIR}
+endif
+
+# Support quiet make
+ifneq (,$(findstring s,$(MAKEFLAGS)))
+export quiet = quiet_
+export KBUILD_VERBOSE = 1
+endif
+
+ifndef KDIR
+export KDIR=$(KERNDIR)
 endif
 
 KERNEL_BDE_LOCAL := linux-kernel-bde.$(KOBJ)
@@ -116,6 +127,12 @@ BCM_GENL := $(DEST_DIR)/$(BCM_GENL_LOCAL)
 BCM_KNET_LOCAL := linux-bcm-knet.$(KOBJ)
 BCM_KNET := $(DEST_DIR)/$(BCM_KNET_LOCAL)
 
+BCM_NGKNET_LOCAL := linux-ngknet.$(KOBJ)
+BCM_NGKNET := $(DEST_DIR)/$(BCM_NGKNET_LOCAL)
+
+NGKNETCB_LOCAL := linux-ngknetcb.$(KOBJ)
+NGKNETCB := $(DEST_DIR)/$(NGKNETCB_LOCAL)
+
 ifeq (,$(findstring DELIVER,$(MAKECMDGOALS)))
 .DEFAULT_GOAL := all
 all_targets := kernel_modules $(KERNEL_BDE) $(USER_BDE)
@@ -132,6 +149,13 @@ endif
 ifndef BUILD_KNET
 BUILD_KNET = 1
 endif
+
+ifndef BUILD_NGKNET
+BUILD_NGKNET = 1
+endif
+
+#Skip building NGKNET_CB
+BUILD_NGKNET_CB = 0
 
 ifeq ($(BUILD_KNET),1)
 # Kernel network support
@@ -179,6 +203,42 @@ ADD_TO_CFLAGS += -I$(SDK)/systems/linux/kernel/modules/include
 COND_KNET_LIBS = libuser.$(libext)
 endif
 
+ifeq (1,$(BUILD_NGKNET))
+# Kernel network support
+all_targets += $(BCM_NGKNET)
+knet_subdirs += bcm-ngknet
+
+ifeq ($(NO_LOCAL_TARGETS),)
+LOCAL_TARGETS +=$(patsubst %,../$(platform)/%,$(BCM_NGKNET_LOCAL))
+all_targets +=$(LOCAL_TARGETS)
+endif
+
+ifeq (1,$(BUILD_NGKNET_CB))
+all_targets += $(NGKNETCB)
+knet_subdirs += ngknetcb
+
+ifeq ($(NO_LOCAL_TARGETS),)
+LOCAL_TARGETS +=$(patsubst %,../$(platform)/%,$(NGKNETCB_LOCAL))
+all_targets +=$(LOCAL_TARGETS)
+endif
+
+ifdef KPMD
+KPMD_OPT := KPMD=1
+endif
+endif
+endif
+
+ifeq (1,$(BUILD_NGKNET))
+NGKNET_BDE_BLDDIR = $(KERN_BLDROOT)/systems/bde/linux/kernel/kernel_module
+NGKNET_LKM_BLDROOT = $(KERN_BLDROOT)/systems/linux/kernel/modules/bcm-ngknet
+NGKNET_BLDDIR = $(NGKNET_LKM_BLDROOT)
+endif # BUILD_NGKNET
+
+ifeq (1,$(BUILD_NGKNET_CB))
+NGKNETCB_LKM_BLDROOT = $(KERN_BLDROOT)/systems/linux/kernel/modules/ngknetcb
+NGKNETCB_BLDDIR = $(NGKNETCB_LKM_BLDROOT)
+endif # BUILD_NGKNET_CB
+
 all: $(BLDDIR)/.tree $(all_targets)
 
 ifeq ($(NO_LOCAL_TARGETS),)
@@ -224,6 +284,18 @@ endif
 		OPT_CFLAGS="$(ADD_TO_KCFLAGS)" override-target=linux-$(platform)
 endif
 endif
+ifeq ($(BUILD_NGKNET),1)
+	$(MAKE) -C $(SDK)/systems/linux/kernel/modules/bcm-ngknet $(OPT_KERNEL_TOOLCHAIN) quiet=$(quiet) LKM_BLDDIR=$(NGKNET_BLDDIR) KBUILD_VERBOSE=$(KBUILD_VERBOSE) \
+		KBUILD_EXTRA_SYMBOLS=$(NGKNET_BDE_BLDDIR)/Module.symvers kernel_version=$(kernel_version) OPT_CFLAGS="$(ADD_TO_KCFLAGS)" \
+		override-target=linux-$(platform)
+	(cd $(KERN_BLDROOT); ln -s -f $(NGKNET_BLDDIR)/*.ko ./)
+ifneq (,$(filter ngknetcb,$(knet_subdirs)))
+	$(MAKE) -C $(SDK)/systems/linux/kernel/modules/ngknetcb $(OPT_KERNEL_TOOLCHAIN) $(KPMD_OPT) quiet=$(quiet) LKM_BLDDIR=$(NGKNETCB_BLDDIR) KBUILD_VERBOSE=$(KBUILD_VERBOSE) \
+		KBUILD_EXTRA_SYMBOLS=$(NGKNET_BLDDIR)/Module.symvers kernel_version=$(kernel_version) OPT_CFLAGS="$(ADD_TO_KCFLAGS)" \
+		override-target=linux-$(platform)
+	(cd $(KERN_BLDROOT); ln -s -f $(NGKNETCB_BLDDIR)/*.ko ./)
+endif
+endif
 
 $(KERNEL_BDE): $(KERN_BLDROOT)/$(KERNEL_BDE_LOCAL)
 	mkdir -p $(@D)
@@ -236,6 +308,12 @@ $(BCM_KNET): $(KERN_BLDROOT)/$(BCM_KNET_LOCAL)
 	$(OBJCOPY) --strip-debug $< $@
 
 $(KNET_CB): $(KERN_BLDROOT)/$(KNET_CB_LOCAL)
+	$(OBJCOPY) --strip-debug $< $@
+
+$(BCM_NGKNET): $(KERN_BLDROOT)/$(BCM_NGKNET_LOCAL)
+	$(OBJCOPY) --strip-debug $< $@
+
+$(NGKNETCB): $(KERN_BLDROOT)/$(NGKNETCB_LOCAL)
 	$(OBJCOPY) --strip-debug $< $@
 
 $(GENL_PACKET): $(KERN_BLDROOT)/$(GENL_PACKET_LOCAL)
@@ -259,10 +337,18 @@ clean::
 		override-target=linux-$(platform) $@
 	$(RM) $(KERNEL_BDE) $(USER_BDE)
 	$(RM) $(BCM_KNET) $(KNET_CB) $(GENL_PACKET) $(BCM_GENL)
+ifdef BUILD_NGKNET
+	$(RM) $(BCM_NGKNET)
+endif
+ifdef BUILD_NGKNET_CB
+	$(RM) $(NGKNETCB)
+endif
 	$(RM) $(KERN_BLDROOT)/$(KERNEL_BDE_LOCAL)
 	$(RM) $(KERN_BLDROOT)/$(USER_BDE_LOCAL)
 	$(RM) $(KERN_BLDROOT)/$(BCM_KNET_LOCAL)
 	$(RM) $(KERN_BLDROOT)/$(KNET_CB_LOCAL)
+	$(RM) $(KERN_BLDROOT)/$(BCM_NGKNET_LOCAL)
+	$(RM) $(KERN_BLDROOT)/$(NGKNETCB_LOCAL)
 	$(RM) $(KERN_BLDROOT)/$(GENL_PACKET_LOCAL)
 	$(RM) $(KERN_BLDROOT)/$(BCM_GENL_LOCAL)
 	$(RM) $(LOCAL_TARGETS)

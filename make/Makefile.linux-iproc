@@ -1,6 +1,6 @@
 # $Id: Makefile.linux-iproc Exp $
 #
-# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+# $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
 # 
 # Permission is granted to use, copy, modify and/or distribute this
 # software under either one of the licenses below.
@@ -33,6 +33,10 @@ ifeq (,$(BUILD_PLATFORM))
 BUILD_PLATFORM=ARM_LINUX
 endif
 
+# Upgrade TCL version from default 8.3 to 8.4
+# Because the incompatible-pointer-types warnings will be treated as errors in new toolchain.
+export TCL840 := 1
+
 # TOOLCHAIN_BASE_DIR    Toolchain base directory for iPROC-CMICd devices
 # TARGET_ARCHITECTURE   Compiler for target architecture
 # KERNDIR               Kernel directory for iPROC-CMICd devices
@@ -40,12 +44,12 @@ ifeq (BE,$(ENDIAN_MODE))
 #While BE mode is supported, it's use is very limited.  We had a specific customer
 #request for BE support but don't currently mainstream it.  So a 5.1.0 version
 #has not been built.  Continue using 5.0.3 for any BE support
-TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk63-be/XLDK32
+TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk64-be/XLDK32
 KERN_BASE_DIR ?= $(TOOLCHAIN_BASE_DIR)
 TARGET_ARCHITECTURE:=armeb-broadcom-linux-uclibcgnueabi
 KERNDIR ?= $(TOOLCHAIN_BASE_DIR)/kernel/linux
 else
-TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk63/XLDK32
+TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk64/XLDK32
 KERN_BASE_DIR ?= $(TOOLCHAIN_BASE_DIR)
 TARGET_ARCHITECTURE:= arm-broadcom-linux-uclibcgnueabi
 KERNDIR ?= $(KERN_BASE_DIR)/kernel/linux
@@ -116,7 +120,7 @@ modname_flags  = $(if $(filter 1,$(words $(modname))),\
 KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
 
 ifeq (,$(KFLAGS))
-KFLAGS := -D__LINUX_ARM_ARCH__=7 -D__KERNEL__ -nostdinc  -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm/include -I$(KERNDIR)/arch/arm/include/generated -I$(KERNDIR)/arch/arm/mach-iproc/include -Wall -Wstrict-prototypes -Wno-trigraphs -Os -fno-strict-aliasing -fno-common -marm -mabi=aapcs-linux -fno-pic -pipe -msoft-float -ffreestanding -march=armv7-a -mfloat-abi=softfp -fomit-frame-pointer -g -fno-stack-protector -Wdeclaration-after-statement -Wno-pointer-sign -mlong-calls
+KFLAGS := -D__LINUX_ARM_ARCH__=7 -D__KERNEL__ -nostdinc  -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm/include -I$(KERNDIR)/arch/arm/include/generated -I$(KERNDIR)/arch/arm/mach-iproc/include -Wall -Wstrict-prototypes -Wno-trigraphs -Os -fno-strict-aliasing -fno-common -marm -mabi=aapcs-linux -fno-pic -pipe -msoft-float -ffreestanding -march=armv7-a -mfloat-abi=softfp -fomit-frame-pointer -g -fno-stack-protector -Wno-frame-address -Wno-address-of-packed-member -Wno-pointer-sign -mlong-calls
 KFLAGS += -I$(LINUX_INCLUDE)/uapi -I$(LINUX_INCLUDE)/generated/uapi -I$(KERNDIR)/arch/arm/include/uapi -I$(KERNDIR)/arch/arm/include/generated/uapi
 
 ifeq "$(shell expr $(CROSS_GCC_VER_MAJOR) \== 10)" "1"

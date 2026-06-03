@@ -1,6 +1,6 @@
 /*
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -519,8 +519,16 @@ _cmicx_interrupt_prepare(bde_ctrl_t *ctrl)
     int d, ind, ret = 0;
     uint32 stat, iena, mask, fmask;
     uint32 intrs = 0;
+    uint32 dev_state = BDE_DEV_STATE_NORMAL;
 
     d = (((uint8 *)ctrl - (uint8 *)_devices) / sizeof (bde_ctrl_t));
+
+    (void)lkbde_dev_state_get(d, &dev_state);
+    if (dev_state == BDE_DEV_STATE_REMOVED) {
+        /* Return directly if PCIe device was removed */
+        return -1;
+    }
+
 
 #ifdef BDE_EDK_SUPPORT
     /* Check for interrupts meant for EDK and return without wasting time */
@@ -629,10 +637,17 @@ _cmicx_interrupt_pending(void *data)
     int d, ind;
     uint32 stat, iena;
     bde_ctrl_t *ctrl = (bde_ctrl_t *)data;
+    uint32 dev_state = BDE_DEV_STATE_NORMAL;
 
     if (ctrl->dev_type & BDE_PCI_DEV_TYPE) {
 
         d = (((uint8 *)ctrl - (uint8 *)_devices) / sizeof (bde_ctrl_t));
+
+        (void)lkbde_dev_state_get(d, &dev_state);
+        if (dev_state == BDE_DEV_STATE_REMOVED) {
+            /* Not handling interrupts if PCIe device was removed */
+            return 0;
+        }
 
         for (ind = 0; ind < ctrl->intr_regs.intc_intr_nof_regs; ind++) {
             IPROC_READ(d, ctrl->intr_regs.intc_intr_status_base + 4 * ind, stat);
@@ -1411,10 +1426,13 @@ _devices_init(int d)
 #ifdef BCM_Q4D_SUPPORT
           case Q4D_DEVICE_ID:
 #endif
+#ifdef BCM_Q4DL_SUPPORT
+          case Q4DL_DEVICE_ID:
+#endif
 #ifdef BCM_J4L_SUPPORT
           case J4L_DEVICE_ID:
 #endif
-#endif
+#endif /* BCM_DNX3_SUPPORT */
 #ifdef BCM_DNXF3_SUPPORT
           case  RAMON2_DEVICE_ID:
           case  RAMON3_DEVICE_ID:
@@ -2205,6 +2223,13 @@ _ioctl(unsigned int cmd, unsigned long arg)
         else if (_devices[io.dev].isr == _cmicx_gen2_interrupt)
         {
             io.rc = lkbde_irq_mask_set(io.dev | LKBDE_IPROC_REG, io.d0, io.d1, 0);
+            /* Set clear_enable based on irq mask */
+            if (io.rc == LUBDE_SUCCESS)
+            {
+                bde_ctrl_t *ctrl;
+                ctrl = &_devices[io.dev];
+                io.rc = lkbde_irq_clear_set(io.dev | LKBDE_IPROC_REG,  ctrl->intr_regs.intc_intr_clear_enable_base + (io.d0 - ctrl->intr_regs.intc_intr_set_enable_base));
+            }
         }
 #endif
         else {
@@ -2333,6 +2358,18 @@ _ioctl(unsigned int cmd, unsigned long arg)
             user_bde->write64(io.dev, io.d0, val);
         }
         break;
+    case LUBDE_GET_I2C_INFO:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
+#ifdef INCLUDE_CPU_I2C
+        lkbde_get_i2c_info(io.dev, &io.dx.dw[0], &io.dx.dw[1], &io.dx.dw[2]);
+        break;
+#else
+        gprintk("Error: The build does not support the LUBDE_GET_I2C_INFO ioctl (%08x)\n", cmd);
+        io.rc = LUBDE_FAIL;
+        break;
+#endif
 
     default:
         gprintk("Error: Invalid ioctl (%08x)\n", cmd);
