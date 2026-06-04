@@ -177,6 +177,9 @@ ifeq ($(KERNELRELEASE),)
 MOD_NAME = linux-ngknet
 
 include $(SDK)/make/Make.lkm
+
+# Make.depend is before clean:: so that Make.depend's clean:: runs first.
+include ${SDK}/make/Make.depend
 endif
 
 .PHONY: distclean
