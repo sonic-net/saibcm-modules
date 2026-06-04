@@ -387,23 +387,23 @@ knet_filter_cb(uint8_t * pkt, int size, int dev_no, void *meta,
 }
 
 static int
-/*knet_netif_create_cb(int unit, kcom_netif_t *netif, struct net_device *dev)*/
-knet_netif_create_cb(struct net_device *dev, int unit, kcom_netif_t *netif)
+/*knet_netif_create_cb(int unit, kcom_netif_t *netif, uint16 spa, struct net_device *dev)*/
+knet_netif_create_cb(struct net_device *dev, int unit, kcom_netif_t *netif, uint16 spa)
 {
     int retv = 0;
 #ifdef PSAMPLE_SUPPORT
-    retv = psample_netif_create_cb(unit, netif, dev);
+    retv = psample_netif_create_cb(unit, netif, spa, dev);
 #endif
     return retv;
 }
 
 static int
-/*knet_netif_destroy_cb(int unit, kcom_netif_t *netif, struct net_device *dev)*/
-knet_netif_destroy_cb(struct net_device *dev, int unit, kcom_netif_t *netif)
+/*knet_netif_destroy_cb(int unit, kcom_netif_t *netif, uint16 spa, struct net_device *dev)*/
+knet_netif_destroy_cb(struct net_device *dev, int unit, kcom_netif_t *netif, uint16 spa)
 {
     int retv = 0;
 #ifdef PSAMPLE_SUPPORT
-    retv = psample_netif_destroy_cb(unit, netif, dev);
+    retv = psample_netif_destroy_cb(unit, netif, spa, dev);
 #endif
     return retv;
 }
