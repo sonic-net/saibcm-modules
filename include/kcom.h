@@ -1,6 +1,7 @@
 /*
  * $Id: kcom.h,v 1.9 Broadcom SDK $
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ *
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -209,6 +210,7 @@ typedef struct kcom_netif_s {
 
 #define KCOM_FILTER_F_ANY_DATA  (1U << 0)
 #define KCOM_FILTER_F_STRIP_TAG (1U << 1)
+#define KCOM_FILTER_F_OOB_RAW   (1U << 2)
 
 #define KCOM_FILTER_DESC_MAX    32
 

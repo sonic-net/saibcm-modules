@@ -1,7 +1,7 @@
 /*
  * $Id: devids.h,v 1.309 Broadcom SDK $
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -1767,17 +1767,14 @@
 #define BCM8879C_DEVICE_ID      0x879C
 #define BCM8879D_DEVICE_ID      0x879D
 #define BCM8879E_DEVICE_ID      0x879E
-#define BCM8879F_DEVICE_ID      0x879F  
+#define BCM8879F_DEVICE_ID      0x879F
 #ifdef BCM_DNXF3_SUPPORT
 #define RAMON2_DEVICE_ID      0x8910
 #define BCM8891F_DEVICE_ID      0x891F
 #define RAMON3_DEVICE_ID      0x8920
 #endif
-#ifdef BCM_DNXFE_SUPPORT
-#ifdef BCM_RAMON_4_SUPPORT
 #define RAMON4_DEVICE_ID      0x9470
-#endif
-#endif
+
 #define ARADPLUS_DEVICE_ID      0x8660
 #define ARADPLUS_A0_REV_ID      0x0001
 #define BCM88660_DEVICE_ID      ARADPLUS_DEVICE_ID
@@ -2086,24 +2083,24 @@
 #define Q3U_ORIG_DEVICE_ID      0x8400
 #define Q3N_ORIG_DEVICE_ID      0x8405
 #endif
-#ifdef BCM_JERICHO_4_SUPPORT
+
+
+
+
+
+#endif /* BCM_DNX3_SUPPORT */
+
+
 #define JERICHO4_DEVICE_ID      0x9450
 #define Q4_DEVICE_ID            0x9420
-#endif
-
-#ifdef BCM_Q4D_SUPPORT
 #define Q4D_DEVICE_ID           0x9430
-#define Q4D_PT200_START_DEVICE_ID  0x9436
-#define Q4D_PT200_END_DEVICE_ID 0x9439
-#endif
-
-
-#ifdef BCM_J4L_SUPPORT
+#define Q4D_200G_START_DEVICE_ID  0x9436
+#define Q4D_200G_END_DEVICE_ID    0x9439
 #define J4L_DEVICE_ID           0x9410
-#endif
+#define Q4DL_DEVICE_ID          0x94E0
+#define Q4DL_200G_START_DEVICE_ID  0x94E6
+#define Q4DL_200G_END_DEVICE_ID    0x94E9
 
-
-#endif
 #define Q2A_DEVICE_ID           0x8480
 #define Q2A_A0_REV_ID           DNXC_A0_REV_ID
 #define Q2A_B0_REV_ID           DNXC_B0_REV_ID
@@ -2243,7 +2240,7 @@
 
 #define PLX9056_DEVICE_ID       0x9056 /* needed for DNX_TEST_BOARD */
 
-/* Tomahawk F1 */
+/* Tomahawk Ultra */
 #define BCM78920_DEVICE_ID 0xf920
 #define BCM78920_A0_REV_ID 0x0001
 #define BCM78923_DEVICE_ID 0xf923
@@ -2252,6 +2249,12 @@
 #define BCM78924_A0_REV_ID 0x0001
 #define BCM78928_DEVICE_ID 0xf928
 #define BCM78928_A0_REV_ID 0x0001
+
+/* Tomahawk Ultra */
+#define BCM78920_B0_REV_ID 0x0011
+#define BCM78923_B0_REV_ID 0x0011
+#define BCM78924_B0_REV_ID 0x0011
+#define BCM78928_B0_REV_ID 0x0011
 
 /* Trident4 X11c */
 #define BCM56890_DEVICE_ID 0xb890

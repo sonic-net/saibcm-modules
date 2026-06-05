@@ -519,6 +519,7 @@ typedef struct bksync_bs_info_s {
     u32 bc;
     u32 hb;
     bksync_time_spec_t offset;
+    u32 protocol;
 } bksync_bs_info_t;
 
 typedef struct bksync_gpio_info_s {
@@ -2521,7 +2522,8 @@ bksync_dnx_ase1588_tsh_hdr_update(bksync_dev_t *dev_info, struct sk_buff *skb, i
             ptp_hdr_offset -= BKSYNC_DNXJR2_MODULE_HEADER_LEN;
         }
         else {
-            ptp_hdr_offset -= (BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_2_SIZE + BKSYNC_DNXJR2_ITMH_HEADER_LEN);
+            ptp_hdr_offset -= (BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_2_SIZE + BKSYNC_DNXJR2_ITMH_HEADER_LEN +
+                                    BKSYNC_DNXJR2_FTMH_APP_SPECIFIC_EXT_LEN + BKSYNC_DNXJR2_TSH_HDR_SIZE);
         }
 
     /* Inserting TSH and ASE before PPH and UDH - shifted PPH and UDH by 13 bytes in skb->data */
@@ -3076,6 +3078,7 @@ static int bksync_broadsync_cmd(bksync_dev_t *dev_info, int bs_id)
     subcmd = (bs_id == 0) ? BKSYNC_BROADSYNC_BS0_CONFIG : BKSYNC_BROADSYNC_BS1_CONFIG;
 
     subcmd_data =  ((dev_info->bksync_bs_info[bs_id]).enable & 0x1);
+    subcmd_data |= (((dev_info->bksync_bs_info[bs_id]).protocol & 0x1) << 1);
     subcmd_data |= (((dev_info->bksync_bs_info[bs_id]).mode & 0x1) << 8);
     subcmd_data |= ((dev_info->bksync_bs_info[bs_id]).hb << 16);
     subcmd_data |= (((u64)(dev_info->bksync_bs_info[bs_id]).bc) << 32);
@@ -3439,7 +3442,7 @@ static ssize_t
 bksync_proc_txts_write(struct file *file, const char *buf,
                       size_t count, loff_t *loff)
 {
-    char debug_str[40];
+    char debug_str[40] = {0};
     char *ptr;
     int port;
     int dev_no;
@@ -3494,7 +3497,7 @@ static ssize_t
 bksync_proc_debug_write(struct file *file, const char *buf,
                       size_t count, loff_t *loff)
 {
-    char debug_str[40];
+    char debug_str[40] = {0};
     char *ptr;
 
     if (copy_from_user(debug_str, buf, count)) {
@@ -3672,6 +3675,7 @@ static ssize_t bs_attr_store(struct kobject *kobj,
     int dev_no = -1;
     bksync_dev_t *dev_info = NULL;
     bksync_time_spec_t offset = {0};
+    int protocol = 0;
 
     if (ATTRCMP(bs0)) {
         bs_id = 0;
@@ -3691,13 +3695,14 @@ static ssize_t bs_attr_store(struct kobject *kobj,
 
     dev_info = &ptp_priv->dev_info[dev_no];
 
-    ret = sscanf(buf, "enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u", &enable, &mode, &bc, &hb, &offset.sign, &offset.sec, &offset.nsec);
-    DBG_VERB(("rd:%d bs0: enable:%d mode:%d bc:%d hb:%d sign:%d offset:%llu.%u\n", rd_iter++, enable, mode, bc, hb, offset.sign, offset.sec, offset.nsec));
+    ret = sscanf(buf, "enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u protocol:%d", &enable, &mode, &bc, &hb, &offset.sign, &offset.sec, &offset.nsec, &protocol);
+    DBG_VERB(("rd:%d bs0: enable:%d mode:%d bc:%d hb:%d sign:%d offset:%llu.%u protocol:%d\n", rd_iter++, enable, mode, bc, hb, offset.sign, offset.sec, offset.nsec, protocol));
 
     dev_info->bksync_bs_info[bs_id].enable = enable;
     dev_info->bksync_bs_info[bs_id].mode = mode;
     dev_info->bksync_bs_info[bs_id].bc = bc;
     dev_info->bksync_bs_info[bs_id].hb = hb;
+    dev_info->bksync_bs_info[bs_id].protocol = protocol;
 
     (void)bksync_broadsync_cmd(dev_info, bs_id);
 
@@ -3741,7 +3746,7 @@ static ssize_t bs_attr_show(struct kobject *kobj,
 
     variance = (status >> 32);
     status = (status & 0xFFFFFFFF);
-    bytes = sprintf(buf, "enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u status:%u(%u)\n",
+    bytes = sprintf(buf, "enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u protocol:%d status:%u(%u)\n",
             dev_info->bksync_bs_info[bs_id].enable,
             dev_info->bksync_bs_info[bs_id].mode,
             dev_info->bksync_bs_info[bs_id].bc,
@@ -3749,9 +3754,10 @@ static ssize_t bs_attr_show(struct kobject *kobj,
             dev_info->bksync_bs_info[bs_id].offset.sign,
             dev_info->bksync_bs_info[bs_id].offset.sec,
             dev_info->bksync_bs_info[bs_id].offset.nsec,
+            dev_info->bksync_bs_info[bs_id].protocol,
             (u32)status,
             variance);
-    DBG_VERB(("wr:%d bs1: enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u status:%u(%u)\n",
+    DBG_VERB(("wr:%d bs1: enable:%d mode:%d bc:%u hb:%u sign:%d offset:%llu.%u protocol:%d status:%u(%u)\n",
                 wr_iter++,
                 dev_info->bksync_bs_info[bs_id].enable,
                 dev_info->bksync_bs_info[bs_id].mode,
@@ -3760,6 +3766,7 @@ static ssize_t bs_attr_show(struct kobject *kobj,
                 dev_info->bksync_bs_info[bs_id].offset.sign,
                 dev_info->bksync_bs_info[bs_id].offset.sec,
                 dev_info->bksync_bs_info[bs_id].offset.nsec,
+                dev_info->bksync_bs_info[bs_id].protocol,
                 (u32)status,
                 variance));
 
@@ -4614,6 +4621,7 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
             dev_info->bksync_bs_info[bs_id].mode = kmsg->clock_info.data[1];
             dev_info->bksync_bs_info[bs_id].bc = kmsg->clock_info.data[2];
             dev_info->bksync_bs_info[bs_id].hb = kmsg->clock_info.data[3];
+            dev_info->bksync_bs_info[bs_id].protocol = kmsg->clock_info.data[4];
 
             (void)bksync_broadsync_cmd(dev_info, bs_id);
             break;

@@ -1,5 +1,6 @@
 /*
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ *
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -186,7 +187,8 @@ MODULE_PARM_DESC(mirror_local,
 /*
  * Force to add one layer of VLAN tag to untagged packets on Dune devices
  */
-#if defined(SAI_FIXUP) && defined(BCM_DNX_SUPPORT)  /* SONIC-16195 CS9129167 - Change the default to NOT add tag */
+#if defined(SAI_FIXUP) && defined(BCM_DNX_SUPPORT)
+/* SONIC-16195 CS9129167 - Change the default to NOT add tag */
 static int force_tagged = 0;
 #else
 static int force_tagged = 1;
@@ -1317,8 +1319,9 @@ bkn_sleep(int clicks)
  * PAXB_0_INTC_SET_INTR_ENABLE_REG5r sets interrupt enable bit for interrupts 191 down to 160
  * Packet DMA interrupt enable bit is [168 : 199], here bit [168 : 183] is considered because it is assumed that only cmc0
  */
-#define PAXB_0_INTC_SET_INTR_ENABLE_REG5r   0x0292D114
-#define PAXB_0_INTC_INTR_RAW_STATUS_REG5r   0x0292D18C
+#define PAXB_0_INTC_SET_INTR_ENABLE_REG5r       0x0292D114
+#define PAXB_0_INTC_CLEAR_INTR_ENABLE_REG5r     0x0292D13C
+#define PAXB_0_INTC_INTR_RAW_STATUS_REG5r       0x0292D18C
 
 
 /* CMICR interrupts reserved for kernel handler */
@@ -2205,7 +2208,8 @@ xgsr_irq_fmask_get(bkn_switch_info_t *sinfo, uint32_t *fmask)
 static inline void
 xgsr_irq_mask_set(bkn_switch_info_t *sinfo, uint32_t mask)
 {
-    uint32_t irq_mask_reg = PAXB_0_INTC_SET_INTR_ENABLE_REG5r;
+    uint32_t irq_mask_set_reg = PAXB_0_INTC_SET_INTR_ENABLE_REG5r;
+    uint32_t irq_mask_clear_set_reg = PAXB_0_INTC_CLEAR_INTR_ENABLE_REG5r;
     uint32_t fmask = CMICR_TXRX_IRQ_MASK;
 
     if ((sinfo->base_id & 0x8000) == 0x8000)  {
@@ -2226,7 +2230,8 @@ xgsr_irq_mask_set(bkn_switch_info_t *sinfo, uint32_t mask)
     }
 
     lkbde_irq_mask_set(sinfo->dev_no | LKBDE_ISR2_DEV | LKBDE_IPROC_REG,
-                       irq_mask_reg, mask, fmask);
+                       irq_mask_set_reg, mask, fmask);
+    lkbde_irq_clear_set(sinfo->dev_no | LKBDE_ISR2_DEV | LKBDE_IPROC_REG, irq_mask_clear_set_reg);
 }
 
 static inline void

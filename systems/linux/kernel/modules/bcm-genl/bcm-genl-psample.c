@@ -1,6 +1,6 @@
 /*
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -803,7 +803,7 @@ static ssize_t
 psample_proc_debug_write(struct file *file, const char *buf,
                          size_t count, loff_t *loff)
 {
-    char debug_str[40];
+    char debug_str[40] = {0};
     char *ptr;
 
     if (count >= sizeof(debug_str)) {
