@@ -39,6 +39,9 @@ endif
 ifneq ($(SDK_OUTDIR),)
 INCLUDES := -I$(SDK_OUTDIR)/$(SDKBUILD)/bcm-ngknet/generated/include \
             -I$(SDK_OUTDIR)/$(SDKBUILD)/bcm-ngknet/generated
+else
+INCLUDES := -I$(SDK)/systems/linux/kernel/modules/bcm-ngknet/generated/include \
+            -I$(SDK)/systems/linux/kernel/modules/bcm-ngknet/generated
 endif
 ccflags-y := $(KNET_CPPFLAGS) $(LKM_CFLAGS) $(LKM_CPPFLAGS) \
              -I$(SDK)/include/ \
