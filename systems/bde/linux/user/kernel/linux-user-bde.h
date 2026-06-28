@@ -1,7 +1,7 @@
 /*
  * $Id: linux-user-bde.h,v 1.23 Broadcom SDK $
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -106,6 +106,7 @@ typedef struct  {
 #define LUBDE_BAR2_WRITE32              _IO(LUBDE_MAGIC, 40)
 #define LUBDE_BAR2_READ64               _IO(LUBDE_MAGIC, 41)
 #define LUBDE_BAR2_WRITE64              _IO(LUBDE_MAGIC, 42)
+#define LUBDE_GET_I2C_INFO              _IO(LUBDE_MAGIC, 43)
 
 
 #define LUBDE_SEM_OP_CREATE       1

@@ -1,7 +1,7 @@
 /*
  * $Id: linux_dma.c,v 1.414 Broadcom SDK $
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -92,10 +92,19 @@
 #define ALLOC_TYPE_API 1 /* use one allocation */
 #define ALLOC_TYPE_HIMEM 2 /* use high memory */
 
+/* MAX_ORDER changed meaning in 6.4 and was removed in 6.8 */
+#ifndef MAX_PAGE_ORDER
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0))
+#define MAX_PAGE_ORDER MAX_ORDER
+#else
+#define MAX_PAGE_ORDER (MAX_ORDER - 1)
+#endif
+#endif
+
 #if _SIMPLE_MEMORY_ALLOCATION_
 #include <linux/dma-mapping.h>
 #ifndef CONFIG_CMA
-#define DMA_MAX_ALLOC_SIZE (1 << (MAX_PAGE_ORDER - 1 + PAGE_SHIFT)) /* Maximum size the kernel can allocate in one allocation */
+#define DMA_MAX_ALLOC_SIZE (1 << (MAX_PAGE_ORDER  + PAGE_SHIFT)) /* Maximum size the kernel can allocate in one allocation */
 #endif /* !CONFIG_CMA */
 #endif /* _SIMPLE_MEMORY_ALLOCATION_ */
 
@@ -140,7 +149,7 @@
 #endif
 
 #ifndef KMALLOC_MAX_SIZE
-#define KMALLOC_MAX_SIZE (1UL << (MAX_PAGE_ORDER - 1 + PAGE_SHIFT))
+#define KMALLOC_MAX_SIZE (1UL << (MAX_PAGE_ORDER + PAGE_SHIFT))
 #endif
 
 /* Compatibility */
