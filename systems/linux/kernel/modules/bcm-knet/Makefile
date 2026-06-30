@@ -1,7 +1,7 @@
 # -*- Makefile -*-
 # $Id: Makefile,v 1.3 Broadcom SDK $
 #
-# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+# $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
 # 
 # Permission is granted to use, copy, modify and/or distribute this
 # software under either one of the licenses below.
@@ -76,7 +76,7 @@ $(KMODULE): $(SRCS_COMPOSING)
 	cp ./*.c $(BLDDIR)/
 	cp ../shared/*.c $(BLDDIR)/
 	cat ${KBUILD_EXTRA_SYMBOLS} > $(BLDDIR)/Module.symvers
-	MOD_OBJS=$(OBJECTS_COMPOSING) MOD_NAME=$(THIS_MOD_NAME) KBUILD_EXTRA_SYMBOLS="${KBUILD_EXTRA_SYMBOLS}" $(MAKE) -C $(BLDDIR) $(THIS_MOD_NAME).ko LOC_BLDDIR=$(BLDDIR) LOC_SRCDIR=$(PWD)
+	MOD_OBJS=$(OBJECTS_COMPOSING) MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR) $(THIS_MOD_NAME).ko LOC_BLDDIR=$(BLDDIR) LOC_SRCDIR=$(PWD)
 # }
 else
 # {

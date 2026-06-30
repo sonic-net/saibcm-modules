@@ -1,6 +1,6 @@
 # $Id: Makefile.linux-iproc Exp $
 #
-# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+# $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
 # 
 # Permission is granted to use, copy, modify and/or distribute this
 # software under either one of the licenses below.
@@ -34,9 +34,8 @@ BUILD_PLATFORM=ARM_LINUX
 endif
 
 # Upgrade TCL version from default 8.3 to 8.4
-ifneq ($(ESW_CHIPS)$(LTSW_CHIPS),)
+# Because the incompatible-pointer-types warnings will be treated as errors in new toolchain.
 export TCL840 := 1
-endif
 
 # TOOLCHAIN_BASE_DIR    Toolchain base directory for iPROC-CMICd devices
 # TARGET_ARCHITECTURE   Compiler for target architecture
@@ -44,12 +43,12 @@ endif
 ifeq (BE,$(ENDIAN_MODE))
 #We've never actually built a 64 BE executable.  Just here for any future
 #customer requirements.
-TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk63-be/XLDK64
+TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk64-be/XLDK64
 KERN_BASE_DIR ?= $(TOOLCHAIN_BASE_DIR)
 TARGET_ARCHITECTURE ?= aarch64_be-broadcom-linux-uclibc
 KERNDIR ?= $(KERN_BASE_DIR)/kernel/linux
 else
-TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk63/XLDK64
+TOOLCHAIN_BASE_DIR ?= /projects/ntsw-tools/linux/iproc_ldks/xldk64/XLDK64
 KERN_BASE_DIR ?= $(TOOLCHAIN_BASE_DIR)
 TARGET_ARCHITECTURE ?= aarch64-broadcom-linux-uclibc
 KERNDIR ?= $(KERN_BASE_DIR)/kernel/linux
@@ -88,6 +87,7 @@ endif
 ifeq ($(LOCALDIR),src/soc/phy/fcmap/src)
 OPT_CFLAGS += -Wno-address-of-packed-member
 endif
+
 CFGFLAGS += -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS
 CFGFLAGS += -DPHYS_ADDRS_ARE_64BITS
 CFLAGS += -fno-aggressive-loop-optimizations -fno-strict-overflow
@@ -99,7 +99,15 @@ ifeq "$(shell expr $(CROSS_GCC_VER_MAJOR) \>= 12)" "1"
 	CFLAGS += -flarge-source-files
 endif
 
-CFGFLAGS += -D$(ENDIAN) -DIPROC_CMICD
+CFGFLAGS += -D$(ENDIAN)
+# IPROC_CMICD enables iproc platform driver which requires iproc_platform_* symbols
+# from the Broadcom BSP kernel. Omit when building against generic kernel (e.g. Debian).
+# Set BUILD_WITH_IPROC_BSP=1 only when building with a BSP kernel that provides those symbols.
+BUILD_WITH_IPROC_BSP ?= 0
+ifeq ($(BUILD_WITH_IPROC_BSP),1)
+CFGFLAGS += -DIPROC_CMICD
+endif
+
 CFGFLAGS += -DBCM_PLATFORM_STRING=\"IPROC_CMICD\"
 #CFGFLAGS += -DSAL_BDE_DMA_MEM_DEFAULT=16
 
@@ -121,10 +129,10 @@ basename_flags = -D"KBUILD_BASENAME=KBUILD_STR($(call name-fix,$(basetarget)))"
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
                  -D"KBUILD_MODNAME=KBUILD_STR($(call name-fix,$(modname)))")
 
-KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/../gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
+KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
 
 ifeq (,$(KFLAGS))
-KFLAGS := -D__LINUX_ARM_ARCH__=8 -D__KERNEL__ -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS -nostdinc -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm64/include -I$(KERNDIR)/arch/arm64/include/generated -I$(KERNDIR)/arch/arm64/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/generated/asm -I$(KERNDIR)/include/uapi -I$(KERNDIR)/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/uapi  -Wall -Wstrict-prototypes -Wno-trigraphs -O2 -fno-strict-aliasing -fno-common -fno-pic -pipe -ffreestanding -fomit-frame-pointer -g -fno-stack-protector -Wdeclaration-after-statement -Wno-pointer-sign -mcmodel=large
+KFLAGS := -D__LINUX_ARM_ARCH__=8 -D__KERNEL__ -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS -nostdinc -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm64/include -I$(KERNDIR)/arch/arm64/include/generated -I$(KERNDIR)/arch/arm64/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/generated/asm -I$(KERNDIR)/include/uapi -I$(KERNDIR)/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/uapi  -Wall -Wstrict-prototypes -Wno-trigraphs -O2 -fno-strict-aliasing -fno-common -fno-pic -pipe -ffreestanding -fomit-frame-pointer -g -fno-stack-protector -Wno-frame-address -Wno-address-of-packed-member -Wno-pointer-sign -mcmodel=large
 endif
 
 ifneq ($(targetplat),user)

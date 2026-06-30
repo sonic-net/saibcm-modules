@@ -1,6 +1,6 @@
 /*
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -204,6 +204,13 @@ MODULE_PARM_DESC(spifreq,
 #endif
 
 
+#define I2C_NO_ID 0x7fffffff
+
+/* module param for adding dummy switch devices */
+static char *dummy_devices;
+LKM_MOD_PARAM(dummy_devices, "s", charp, 0);
+MODULE_PARM_DESC(dummy_devices,
+"List of dummy switch devices to be added. Input format (devid=%x revid=%x type=%x unique_id=%x [i2c_bus=%x i2c_device=%x]");
 
 /* Periodic timer to prevent stuck interrupt */
 static int isrtickms = 1000;
@@ -415,6 +422,10 @@ typedef struct bde_ctrl_s {
     uint32 dev_sram_dma_start;    /* start address of device SRAM used for DMA */
     uint32 dev_sram_dma_size;     /* size in bytes of device SRAM used for DMA */
 #endif /* INCLUDE_SRAM_DMA */
+#ifdef INCLUDE_CPU_I2C
+    uint32  i2c_bus;
+    uint32  i2c_dev;
+#endif /* INCLUDE_CPU_I2C */
 } bde_ctrl_t;
 
 static bde_ctrl_t _devices[LINUX_BDE_MAX_DEVICES];
@@ -433,6 +444,7 @@ static int _ether_ndevices = 0;
 static int _cpu_ndevices = 0;
 
 #define VALID_DEVICE(_n) ((_n >= 0) && (_n < _ndevices))
+#define REMOVED_DEVICE(_n) (_devices[_n].dev_state == BDE_DEV_STATE_REMOVED)
 
 #if defined(IPROC_CMICD) && defined(CONFIG_OF)
 #define ICFG_CHIP_ID_REG      0x10236000
@@ -1280,20 +1292,6 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, BCM56801_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56802_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56803_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56630_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56634_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56636_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56638_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56639_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56538_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56520_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56521_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56522_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56524_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56526_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56534_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56331_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
-    { BROADCOM_VENDOR_ID, BCM56333_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56534_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56334_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, BCM56320_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
@@ -1806,6 +1804,19 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, Q4D_DEVICE_ID + 9, PCI_ANY_ID, PCI_ANY_ID },
 #endif
 
+#ifdef BCM_Q4DL_SUPPORT
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 1, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 2, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 3, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 4, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 5, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 6, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 7, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 8, PCI_ANY_ID, PCI_ANY_ID },
+    { BROADCOM_VENDOR_ID, Q4DL_DEVICE_ID + 9, PCI_ANY_ID, PCI_ANY_ID },
+#endif
+
 
 #ifdef BCM_J4L_SUPPORT
     { BROADCOM_VENDOR_ID, J4L_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
@@ -1819,6 +1830,8 @@ static const struct pci_device_id _id_table[] = {
     { BROADCOM_VENDOR_ID, J4L_DEVICE_ID + 8, PCI_ANY_ID, PCI_ANY_ID },
     { BROADCOM_VENDOR_ID, J4L_DEVICE_ID + 9, PCI_ANY_ID, PCI_ANY_ID },
 #endif
+
+
 
 
 #endif
@@ -2693,6 +2706,10 @@ _pci_probe(struct pci_dev *dev, const struct pci_device_id *ent)
             ctrl->dev_type |= BDE_SWITCH_DEV_TYPE;
             ctrl->domain_no = pci_domain_nr(dev->bus);
             ctrl->bus_no = dev->bus->number;
+#ifdef INCLUDE_CPU_I2C
+            ctrl->i2c_bus = I2C_NO_ID;
+            ctrl->i2c_dev = I2C_NO_ID;
+#endif
             ctrl->dev_state = BDE_DEV_STATE_NORMAL;
             add_dev = 1;
         }
@@ -3118,6 +3135,17 @@ _pci_remove(struct pci_dev* dev)
         /* Unused device */
         return;
     }
+
+#ifdef CONFIG_PCI_MSI
+    /* Stop the ISR tick timer BEFORE setting dev_state
+     * This prevents the timer from firing after memory is unmapped */
+    if (ctrl->intr_pending && ctrl->use_msi >= PCI_USE_INT_MSI
+         && ctrl->timer_active) {
+        ctrl->timer_active = 0;
+        del_timer_sync(&ctrl->isr_tick);
+    }
+#endif
+
     ctrl->dev_state = BDE_DEV_STATE_REMOVED;
     if (debug >= 1) {
         gprintk("PCI device %04x:%04x is removed. \n",
@@ -3141,11 +3169,6 @@ _pci_remove(struct pci_dev* dev)
         }
     }
 #ifdef CONFIG_PCI_MSI
-    if (ctrl->intr_pending && ctrl->use_msi >= PCI_USE_INT_MSI && ctrl->timer_active) {
-        ctrl->timer_active = 0;
-        del_timer_sync(&ctrl->isr_tick);
-    }
-
     _msi_disconnect(ctrl);
 #endif
 
@@ -3157,9 +3180,11 @@ _pci_remove(struct pci_dev* dev)
 
     if (ctrl->bde_dev.base_address1) {
         iounmap((void *)ctrl->bde_dev.base_address1);
+        ctrl->bde_dev.base_address1 = 0;
     }
     if (ctrl->bde_dev.base_address) {
         iounmap((void *)ctrl->bde_dev.base_address);
+        ctrl->bde_dev.base_address = 0;
     }
 }
 
@@ -3316,7 +3341,89 @@ probe_plx_local_bus(void)
 
 #endif /* BCM_PLX9656_LOCAL_BUS */
 
+/*
+ * Add a dummy (non-real) switch device used for testing the BDE.
+ * Returns zero on success.
+ */
+static int
+add_dummy_switch_device(uint16 device_id, uint8  revision_id, uint32 dev_type, uint32 unique_id, uint32 i2c_bus, uint32 i2c_device)
+{
+    bde_ctrl_t *ctrl = _devices + _ndevices;
+#ifdef INCLUDE_SRAM_DMA
+    uint32 icfg_rts_straps_addr = 0, iproc_version = 0;
+#endif
 
+    if (_ndevices >= LINUX_BDE_MAX_DEVICES) return -1;
+
+    ctrl->dev_type = dev_type;
+    ctrl->pci_device = NULL; /* No PCI bus */
+    ctrl->bde_dev.base_address = 0;
+    ctrl->iowin[0].addr = 0;
+    ctrl->iowin[0].size = 0;
+    ctrl->bde_dev.device = device_id;
+    ctrl->bde_dev.rev = revision_id;
+    ctrl->bde_dev.dev_unique_id = unique_id;
+#ifdef INCLUDE_CPU_I2C
+    ctrl->i2c_bus = i2c_bus;
+    ctrl->i2c_dev = i2c_device;
+#endif
+
+#ifdef INCLUDE_SRAM_DMA
+    /* Check if the device should use SRAM for DMA, if so configure the SRAM to be used */
+    if (use_sram_for_dma) {
+        switch (device_id & DNXC_DEVID_FAMILY_MASK) {
+            case RAMON2_DEVICE_ID: /* Mark the device as user type if SRAM mode RM2/3 */
+            case RAMON3_DEVICE_ID:
+            case JERICHO3_DEVICE_ID:
+            case J3AI_DEVICE_ID:
+            case Q3D_DEVICE_ID:
+#ifdef BCM_Q3A_SUPPORT
+            case Q3A_DEVICE_ID:
+            case Q3U_DEVICE_ID:
+#endif
+            iproc_version = 20;
+                break;
+
+            case JERICHO4_DEVICE_ID:
+            case Q4_DEVICE_ID:
+            case Q4D_DEVICE_ID:
+            case J4L_DEVICE_ID:
+            iproc_version = 21;
+                break;
+            default:
+                gprintk("Error: device 0x%x does not support SRAMDMA access\n", device_id);
+        }
+
+        if (iproc_version == 20) {
+            icfg_rts_straps_addr = 0x2920034;
+        } else if (iproc_version >= 21) {
+            icfg_rts_straps_addr = 0x2920030;
+        }
+
+        if (icfg_rts_straps_addr) {
+            if ((shbde_iproc_pci_read(&ctrl->shbde, (void *)ctrl->bde_dev.base_address1, icfg_rts_straps_addr) & 2) != 0) {
+                ctrl->dev_sram_dma_start = 0x38100000;
+                ctrl->dev_sram_dma_size = 0x400000; /* 4MB */
+            } else { /* Use free M0SSQ SRAM */
+                ctrl->dev_sram_dma_start = 0x2070000;
+                ctrl->dev_sram_dma_size = 0x10000; /* 64KB */
+            }
+
+            ctrl->dev_type |= BDE_USER_DEV_TYPE; /* Mark as user defined access for BDE handling access to BARs */
+            if (debug >= 4) {
+                gprintk("PCI device 0x%x using SRAM DMA at 0x%x size 0x%x dev_type=0x%x dev=%u\n", device_id,
+                        ctrl->dev_sram_dma_start, ctrl->dev_sram_dma_size, ctrl->dev_type, (unsigned)(ctrl - _devices));
+            }
+        } else {
+            ctrl->dev_sram_dma_start = ctrl->dev_sram_dma_size = 0;
+        }
+    }
+#endif /* INCLUDE_SRAM_DMA */
+
+    _bde_add_device();
+
+    return 0;
+}
 
 
 
@@ -3452,6 +3559,36 @@ _init(void)
         }
     }
 
+
+    /* If argument was provided, add dummy devices according to it */
+    if (dummy_devices) {
+        char  *token;
+        unsigned int devid = 0, revid = 0, devtype = 0, unique_id = 0;
+        unsigned int  i2c_bus = I2C_NO_ID, i2c_device = I2C_NO_ID;
+
+        gprintk("dummy device to add: %s\n", dummy_devices);
+        token = strtok(dummy_devices, ";");
+        while (token) {
+            _parse_eb_args(token, "devid=%x,revid=%x,type=%x,unique_id=%x,i2c_bus=%x,i2c_device=%x",
+                           &devid, &revid, &devtype, &unique_id, &i2c_bus, &i2c_device);
+            if (!devid || !devtype || !unique_id) {
+                gprintk("Invalid dummy_devices format or zero values: devid=0x%x revid=0x%x type=0x%x unique_id=0x%x [i2c_bus=0x%x i2c_device=0x%x]\n",
+                        devid, revid, devtype, unique_id, i2c_bus, i2c_device);
+                break;
+            }
+
+            /* Add dummy devices based on kernel module argument */
+            if (add_dummy_switch_device(devid, revid, devtype, unique_id, i2c_bus, i2c_device)) {
+                gprintk("failed adding dummy device: devid=0x%x revid=0x%x type=0x%x unique_id=0x%x [i2c_bus=0x%x i2c_device=0x%x]\n",
+                            devid, revid, devtype, unique_id, i2c_bus, i2c_device);
+            } else if (debug >= 1) {
+                gprintk("added dummy device: devid=0x%x revid=0x%x type=0x%x unique_id=0x%x [i2c_bus=0x%x i2c_device=0x%x]\n",
+                            devid, revid, devtype, unique_id, i2c_bus, i2c_device);
+            }
+
+            token = strtok(NULL, ";");
+        }
+    }
 
     for (i = 0; i < LINUX_BDE_MAX_DEVICES; ++i) {
         _devices[i].inst_id = BDE_DEV_INST_ID_INVALID;
@@ -3609,6 +3746,24 @@ _pprint(struct seq_file *m)
                     ctrl->iLine);
         } else if (ctrl->dev_type & BDE_EB_DEV_TYPE) {
             pprintf(m, "EB Bus Device 0x%x:0x%x\n",
+                    ctrl->bde_dev.device,
+                    ctrl->bde_dev.rev);
+        } else if (ctrl->dev_type & (BDE_USER_DEV_TYPE | BDE_I2C_DEV_TYPE)) {
+            pprintf(m, "Dummy Device using I2C 0x%x:0x%x\n",
+                    ctrl->bde_dev.device,
+                    ctrl->bde_dev.rev);
+#ifdef INCLUDE_CPU_I2C
+            pprintf(m, "\t\ti2c_bus=0x%x i2c_dev=0x%x\n",
+                    ctrl->i2c_bus,
+                    ctrl->i2c_dev);
+#endif
+#ifdef INCLUDE_SRAM_DMA
+            pprintf(m, "\t\tdev_sram_dma_start=0x%x dev_sram_dma_size=0x%x\n",
+                    ctrl->dev_sram_dma_start,
+                    ctrl->dev_sram_dma_size);
+#endif
+        } else if (ctrl->dev_type & BDE_USER_DEV_TYPE) {
+            pprintf(m, "User defined Device 0x%x:0x%x\n",
                     ctrl->bde_dev.device,
                     ctrl->bde_dev.rev);
         }
@@ -3778,9 +3933,18 @@ _pci_conf_read(int d, uint32 addr)
         return 0xFFFFFFFF;
     }
 
+    if (REMOVED_DEVICE(d)) {
+        gprintk("_pci_conf_read: Device was removed %d\n", d);
+        return 0xFFFFFFFF;
+    }
+
     if (!(_devices[d].dev_type & BDE_PCI_DEV_TYPE)) {
         gprintk("_pci_conf_read: Not PCI device %d, type %x\n",
                 d, _devices[d].dev_type);
+        return 0xFFFFFFFF;
+    }
+
+    if (_devices[d].pci_device == NULL) {
         return 0xFFFFFFFF;
     }
 
@@ -3800,9 +3964,18 @@ _pci_conf_write(int d, uint32 addr, uint32 data)
         return -1;
     }
 
+    if (REMOVED_DEVICE(d)) {
+        gprintk("_pci_conf_write: Device was removed %d\n", d);
+        return -1;
+    }
+
     if (!(_devices[d].dev_type & BDE_PCI_DEV_TYPE)) {
         gprintk("_pci_conf_write: Not PCI device %d, type %x\n",
                 d, _devices[d].dev_type);
+        return -1;
+    }
+
+    if (_devices[d].pci_device == NULL) {
         return -1;
     }
 
@@ -3846,7 +4019,7 @@ _read(int d, uint32_t addr)
     volatile uint16  msb, lsb;
     uint32  sl_addr, data;
 
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return -1;
     }
 
@@ -3882,7 +4055,7 @@ _write(int d, uint32_t addr, uint32_t data)
     unsigned long flags;
     uint32  sl_addr;
 
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return -1;
     }
 
@@ -3922,7 +4095,7 @@ static uint64
 _read64(int d, uint32_t addr)
 {
     uint64_t  data;
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         data =  (uint64_t)-1;
         return *(uint64 *)&data;
     }
@@ -3942,7 +4115,8 @@ _read64(int d, uint32_t addr)
 static void
 _write64(int d, uint32_t addr, uint64 data)
 {
-    if (!VALID_DEVICE(d) || !(BDE_DEV_MEM_MAPPED(_devices[d].dev_type))) {
+    if (!VALID_DEVICE(d) || !(BDE_DEV_MEM_MAPPED(_devices[d].dev_type))
+         || REMOVED_DEVICE(d)) {
         return;
     }
 
@@ -4399,7 +4573,7 @@ _iproc_ihost_write(int d, uint32_t addr, uint32_t data)
 static uint32_t
 _iproc_read(int d, uint32_t addr)
 {
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return -1;
     }
 
@@ -4422,7 +4596,7 @@ _iproc_read(int d, uint32_t addr)
 static int
 _iproc_write(int d, uint32_t addr, uint32_t data)
 {
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return -1;
     }
 
@@ -4534,11 +4708,15 @@ lkbde_cpu_pci_register(int d)
     bde_ctrl_t* ctrl;
     uint16  cmd = 0;
 
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return -1;
     }
 
     ctrl = &_devices[d];
+
+    if (ctrl->pci_device == NULL) {
+        return -1;
+    }
 
     /* enable device */
     if (pci_enable_device(ctrl->pci_device)) {
@@ -4677,6 +4855,9 @@ lkbde_cpu_pci_register(int d)
 #ifdef BCM_Q4D_SUPPORT
       case Q4D_DEVICE_ID:
 #endif
+#ifdef BCM_Q4DL_SUPPORT
+      case Q4DL_DEVICE_ID:
+#endif
 #ifdef BCM_J4L_SUPPORT
       case J4L_DEVICE_ID:
 #endif
@@ -4734,7 +4915,7 @@ lkbde_mem_write(int d, uint32 addr, uint32 *buf)
     bde_ctrl_t* ctrl;
     void *full_addr;
 
-    if (!VALID_DEVICE(d)) return -1;
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) return -1;
     ctrl = &_devices[d];
 
     full_addr   = (void *)ctrl->bde_dev.base_address + addr;
@@ -4749,7 +4930,7 @@ lkbde_mem_read(int d, uint32 addr, uint32 *buf)
     bde_ctrl_t* ctrl;
     void *full_addr;
 
-    if (!VALID_DEVICE(d)) return -1;
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) return -1;
     ctrl = &_devices[d];
 
     full_addr   = (void *)ctrl->bde_dev.base_address + addr;
@@ -4964,13 +5145,16 @@ lkbde_get_dev_resource(int d, int rsrc, uint32_t *phys_lo,
 void *
 lkbde_get_dma_dev(int d)
 {
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
         return NULL;
     }
 
 #ifdef LINUX_BDE_DMA_DEVICE_SUPPORT
     return (void *)_devices[d].dma_dev;
 #else
+    if (_devices[d].pci_device == NULL) {
+        return NULL;
+    }
     return (void *)_devices[d].pci_device;
 #endif
 }
@@ -4978,7 +5162,11 @@ lkbde_get_dma_dev(int d)
 void *
 lkbde_get_hw_dev(int d)
 {
-    if (!VALID_DEVICE(d)) {
+    if (!VALID_DEVICE(d) || REMOVED_DEVICE(d)) {
+        return NULL;
+    }
+
+    if (_devices[d].pci_device == NULL) {
         return NULL;
     }
 
@@ -5113,6 +5301,36 @@ lkbde_irq_mask_set(int d, uint32_t addr, uint32_t mask, uint32_t fmask)
         _iproc_write(d, addr, ctrl->imask | ctrl->imask2);
     } else {
         _write(d, addr, ctrl->imask | ctrl->imask2);
+    }
+
+    spin_unlock_irqrestore(&ctrl->lock, flags);
+
+    return 0;
+}
+
+int
+lkbde_irq_clear_set(int d, uint32_t addr)
+{
+    bde_ctrl_t *ctrl;
+    int iproc_reg;
+    unsigned long flags;
+
+    iproc_reg = d & LKBDE_IPROC_REG;
+    d &= ~(LKBDE_ISR2_DEV | LKBDE_IPROC_REG);
+
+    if (!VALID_DEVICE(d)) {
+        return -1;
+    }
+
+    ctrl = _devices + d;
+
+    /* Lock is required to synchronize access from user space */
+    spin_lock_irqsave(&ctrl->lock, flags);
+
+    if (iproc_reg) {
+        _iproc_write(d, addr, ~(ctrl->imask | ctrl->imask2));
+    } else {
+        _write(d, addr, ~(ctrl->imask | ctrl->imask2));
     }
 
     spin_unlock_irqrestore(&ctrl->lock, flags);
@@ -5328,6 +5546,25 @@ lkbde_get_sram_dma_info(unsigned d, uint32 *sram_start, uint32 *sram_size)
 }
 #endif /* INCLUDE_SRAM_DMA */
 
+#ifdef INCLUDE_CPU_I2C
+/* Return the i2c bus and i2c device if they were specified in the kernel arguments */
+void
+lkbde_get_i2c_info(int d, uint32 *i2c_bus, uint32 *i2c_dev, uint32 *use_default)
+{
+
+    if (d < _ndevices && _devices[d].i2c_bus != I2C_NO_ID && _devices[d].i2c_dev != I2C_NO_ID) { /* This is an I2C info was specified */
+        *i2c_bus = _devices[d].i2c_bus;
+        *i2c_dev = _devices[d].i2c_dev;
+        *use_default = 0;
+    } else {
+        *use_default = 1;
+    }
+}
+
+LKM_EXPORT_SYM(lkbde_get_i2c_info);
+
+#endif /* INCLUDE_CPU_I2C */
+
 /*
  * Export functions
  */
@@ -5341,6 +5578,7 @@ LKM_EXPORT_SYM(lkbde_get_dma_dev);
 LKM_EXPORT_SYM(lkbde_irq_mask_set);
 LKM_EXPORT_SYM(lkbde_irq_mask_get);
 LKM_EXPORT_SYM(lkbde_irq_status_get);
+LKM_EXPORT_SYM(lkbde_irq_clear_set);
 LKM_EXPORT_SYM(lkbde_get_dev_phys_hi);
 LKM_EXPORT_SYM(lkbde_dev_state_set);
 LKM_EXPORT_SYM(lkbde_dev_state_get);

@@ -2,7 +2,7 @@
  *
  * $Id: linux-bde.h,v 1.24 Broadcom SDK $
  *
- * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * $Copyright: 2017-2026 Broadcom Inc. All rights reserved.
  * 
  * Permission is granted to use, copy, modify and/or distribute this
  * software under either one of the licenses below.
@@ -270,6 +270,7 @@ extern linux_bde_device_bitmap_t* lkbde_get_inst_devs(uint32 inst_id);
 extern int lkbde_irq_mask_set(int d, uint32 addr, uint32 mask, uint32 fmask);
 extern int lkbde_irq_mask_get(int d, uint32 *mask, uint32 *fmask);
 extern int lkbde_irq_status_get(int d, uint32_t addr, uint32 *status);
+extern int lkbde_irq_clear_set(int d, uint32 addr);
 
 #ifdef BCM_SAND_SUPPORT
 extern int lkbde_cpu_write(int d, uint32 addr, uint32 *buf);
@@ -298,6 +299,10 @@ extern void _update_apis_for_sram_dma();
 #endif
 extern void lkbde_get_sram_dma_info(unsigned d, uint32 *sram_start, uint32 *sram_size);
 #endif /* INCLUDE_SRAM_DMA */
+
+#ifdef INCLUDE_CPU_I2C
+extern void lkbde_get_i2c_info(int d, uint32 *i2c_bus, uint32 *i2c_dev, uint32 *use_default);
+#endif
 /*
  * This flag must be OR'ed onto the device number when calling
  * interrupt_connect/disconnect and irq_mask_set functions from
