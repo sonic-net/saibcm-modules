@@ -87,12 +87,24 @@ build-arch: configure-stamp  build-arch-stamp
 build-arch-stamp:
 	dh_testdir
 
-	# create links
+	# Create the /lib/modules/$(KVER_ARCH)/{build,source} symlinks
+	# atomically. Using `rm` followed by `ln -s` leaves a window of
+	# tens to hundreds of milliseconds where the symlink does not
+	# exist on disk. Other concurrent platform-modules-* recipes
+	# (e.g. sonic-platform-modules-dell's debian/rules) iterate over
+	# their MODULE_DIRS running `make -C /lib/modules/$(KVER_ARCH)/build
+	# M=... clean` per platform, and a single iteration that lands in
+	# that window fails with "No such file or directory" on the
+	# kernel build dir, aborting the whole recipe.
+	#
+	# `ln -sfn` performs the unlink + symlink in a single rename(2)
+	# syscall (via a hidden temp path), so the target name is never
+	# absent from a concurrent observer's point of view. The non-DNX
+	# variant of this Makefile (`platform/broadcom/saibcm-modules/`)
+	# already uses this form.
 	cd /; sudo mkdir -p /lib/modules/$(KVER_ARCH)
-	cd /; sudo rm /lib/modules/$(KVER_ARCH)/build
-	cd /; sudo rm /lib/modules/$(KVER_ARCH)/source
-	cd /; sudo ln -s /usr/src/linux-headers-$(KVER_COMMON)/ /lib/modules/$(KVER_ARCH)/source
-	cd /; sudo ln -s /usr/src/linux-headers-$(KVER_ARCH)/ /lib/modules/$(KVER_ARCH)/build
+	cd /; sudo ln -sfn /usr/src/linux-headers-$(KVER_COMMON)/ /lib/modules/$(KVER_ARCH)/source
+	cd /; sudo ln -sfn /usr/src/linux-headers-$(KVER_ARCH)/ /lib/modules/$(KVER_ARCH)/build
 	if [ ! -e /usr/src/linux-headers-$(KVER_COMMON)/include/generated ]; then \
 		sudo ln -s /usr/src/linux-headers-$(KVER_ARCH)/include/generated/ /usr/src/linux-headers-$(KVER_COMMON)/include/generated; \
 	fi
