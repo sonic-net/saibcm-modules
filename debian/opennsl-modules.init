@@ -18,10 +18,14 @@ function create_devices()
         rm -f /dev/linux_ngbde
         rm -f /dev/linux_ngknet
         rm -f /dev/linux_ngknetcb
+        rm -f /dev/linux_ngedk
+        rm -f /dev/linux_ngst
 
         mknod /dev/linux_ngbde       c 120 0
         mknod /dev/linux_ngknet      c 121 0
         mknod /dev/linux_ngknetcb    c 122 0
+        mknod /dev/linux_ngedk       c 62 0
+        mknod /dev/linux_ngst        c 61 0
     else
         rm -f /dev/linux-knet-cb
         rm -f /dev/linux-bcm-knet
@@ -50,6 +54,8 @@ function load_kernel_modules()
         modprobe linux_ngknet rx_buffer_size=$rx_buffer_size
         modprobe linux_ngknetcb
         modprobe linux_bcmgenl
+        modprobe linux_ngedk
+        modprobe linux_ngst
     else
         modprobe linux-kernel-bde dmasize=$dmasize maxpayload=128 debug=4 dma_debug=1 usemsi=$usemsi
         modprobe linux-user-bde
@@ -64,6 +70,8 @@ function load_kernel_modules()
 function remove_kernel_modules()
 {
     if [[ $is_ltsw_chip -eq 1 ]]; then
+        rmmod linux_ngst
+        rmmod linux_ngedk
         rmmod linux_bcmgenl
         rmmod linux_ngknetcb
         rmmod linux_ngknet
