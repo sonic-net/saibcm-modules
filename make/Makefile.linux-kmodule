@@ -27,20 +27,17 @@
 # 
 # 
 
-# Due to the extensive use of driver libraries, the SDK usually builds
-# kernel modules from a precompiled object. To avoid various warnings
-# and conflicts, the pre-compiled object must be named differently
-# from the target module, and the object file itself should be
-# appended with "_shipped".
-
+#
 # If a module exports any symbols, then the exporting source file must
 # be compiled within the kernel source tree for correct generation of
 # module symbol versions. The symbol source file should be passed to
 # this Makefile via the MODULE_SYM variable.
+#
 
 #
 # Do not remove this assignment of LOCALDIR.
 # It is used as an input flag for Make.config
+#
 LOCALDIR = .
 MODULE := $(MOD_NAME).o
 KMODULE := $(MOD_NAME).ko
@@ -50,15 +47,14 @@ obj-m := $(MODULE)
 include $(SDK)/make/Make.config
 CFLAGS :=
 
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
 #
-# When compiling the module within the kernel environment, we get plenty of warnings
-# of pointer-to-int and the other way round. So, we need to silence them.
-# Apart from that, we need a search path on the kernel's 'include' and the various
-# SDK 'include' directories. 
+# When compiling the module within the kernel environment, we get
+# plenty of warnings of pointer-to-int and the other way round. So, we
+# need to silence them.  Apart from that, we need a search path on the
+# kernel's 'include' and the various SDK 'include' directories.
 #
 ccflags-y   := \
+  $(LKM_CPPFLAGS) \
   -I$(SDK)/include \
   -I$(SDK)/systems/bde/linux/include \
   -I$(SDK)/systems/bde/shared/include \
@@ -72,29 +68,15 @@ ccflags-y   := \
 #
 ccflags-y += $(CFGFLAGS) $(LKM_BUILD_INFO)
 
+# Add module-specific include paths if MODULE_EXTRA_CFLAGS is provided
+ifdef MODULE_EXTRA_CFLAGS
+ccflags-y += $(MODULE_EXTRA_CFLAGS)
+endif
+
 # Required for older kernels
 export EXTRA_CFLAGS := $(ccflags-y)
 
-#
-# Reach here if this makefile is invoked
-#   from systems\bde\linux\kernel (module name: linux-kernel-bde.ko).
-#   from systems\bde\linux\user\kernel (module name: linux-user.ko)
-#   from systems/linux/kernel/modules/bcm-knet (module name: linux-bcm-knet)
-#   from systems/linux/kernel/modules/knet-cb (module name: linux-knet-cb)
 $(MOD_NAME)-y := $(MOD_OBJS)
-# }
-else
-# {
-PRE_COMPILED_OBJ := obj_$(MOD_NAME).o
-$(MOD_NAME)-y := $(MODULE_SYM) $(PRE_COMPILED_OBJ)
-# }
-endif
-
-#
-# Note that PWD will get two values, in the process of making the module,
-# one for the current directory within 'build' and one for the 'base' of the kernel.
-#
-PWD := $(shell pwd)
 
 ifneq ($(ARCH),)
 # ELDK does not seem to `automatically' define ARCH where other gccs may
@@ -117,36 +99,12 @@ ifeq ($(LD),)
 LD = $(CROSS_COMPILE)ld
 endif
 
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
-$(KMODULE):
-	rm -f *.o *.ko .*.cmd *.sig *.P
-	rm -fr .tmp_versions
-	if [ ! -f $(KERNBLDDIR)/NO_SUPRESS ]; then echo "# suppress warning" > .$(PRE_COMPILED_OBJ).cmd; fi
-	#
-	# This make creates the module's object. It, somehow, runs two cycls, one in SDK environment
-	# and one in the kernel's directory.
-	#
-	$(MAKE) -C $(KERNBLDDIR) CROSS_COMPILE=$(CROSS_COMPILE) LD=$(LD) M=$(PWD) \
+$(KMODULE): FORCE
+	$(MAKE) -C $(KERNBLDDIR) CROSS_COMPILE=$(CROSS_COMPILE) LD=$(LD) M=$(CURDIR) \
 		quiet=$(quiet) KBUILD_VERBOSE=$(KBUILD_VERBOSE) modules
-	if [ ! -f Module.symvers ]; then echo "old kernel (pre-2.6.17)" > Module.symvers; fi
 	cp -f $(KMODULE) $(LIBDIR)
-# }
-else
-# {
-# The precopiled object needs a dummy command file to avoid warnings
-# from the Kbuild scripts (modpost stage).
-# Kernels before 2.6.17 do not support external module symbols files,
-# so we create a dummy to prevent build failures.
-#
-$(KMODULE):
-	rm -f *.o *.ko .*.cmd
-	rm -fr .tmp_versions
-	ln -s $(LIBDIR)/$(MODULE) $(PRE_COMPILED_OBJ)_shipped
-	if [ ! -f $(KERNBLDDIR)/NO_SUPRESS ]; then echo "# suppress warning" > .$(PRE_COMPILED_OBJ).cmd; fi
-	$(MAKE) -C $(KERNBLDDIR) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) modules
-	if [ ! -f Module.symvers ]; then echo "old kernel (pre-2.6.17)" > Module.symvers; fi
-	cp -f $(KMODULE) $(LIBDIR)
-	rm -f $(PRE_COMPILED_OBJ)_shipped
-# }
-endif
+
+# Force Linux make to check dependencies
+FORCE:
+
+.PHONY: FORCE

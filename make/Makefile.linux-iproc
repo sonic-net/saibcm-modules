@@ -117,18 +117,6 @@ basename_flags = -D"KBUILD_BASENAME=KBUILD_STR($(call name-fix,$(basetarget)))"
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
                  -D"KBUILD_MODNAME=KBUILD_STR($(call name-fix,$(modname)))")
 
-KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
-
-ifeq (,$(KFLAGS))
-KFLAGS := -D__LINUX_ARM_ARCH__=7 -D__KERNEL__ -nostdinc  -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm/include -I$(KERNDIR)/arch/arm/include/generated -I$(KERNDIR)/arch/arm/mach-iproc/include -Wall -Wstrict-prototypes -Wno-trigraphs -Os -fno-strict-aliasing -fno-common -marm -mabi=aapcs-linux -fno-pic -pipe -msoft-float -ffreestanding -march=armv7-a -mfloat-abi=softfp -fomit-frame-pointer -g -fno-stack-protector -Wno-frame-address -Wno-address-of-packed-member -Wno-pointer-sign -mlong-calls
-KFLAGS += -I$(LINUX_INCLUDE)/uapi -I$(LINUX_INCLUDE)/generated/uapi -I$(KERNDIR)/arch/arm/include/uapi -I$(KERNDIR)/arch/arm/include/generated/uapi
-
-ifeq "$(shell expr $(CROSS_GCC_VER_MAJOR) \== 10)" "1"
-	# WAR: Disable the following optimizations because they will fail the installation of kernel modules
-	KFLAGS += -fno-expensive-optimizations -fno-gcse
-endif
-endif
-
 ifneq ($(targetplat),user)
 include ${SDK}/make/Makefile.linux-kernel-3_6
 endif

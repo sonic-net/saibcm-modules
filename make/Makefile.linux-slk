@@ -81,7 +81,6 @@ CLANG_ADD_CFLAGS += --target=$(TARGET_ARCHITECTURE) \
                     --sysroot=$(TOOLCHAIN_BASE_DIR)/buildroot/host/$(TARGET_ARCHITECTURE)/sysroot
 OPT_KERNEL_TOOLCHAIN = CC=$(CROSS_COMPILE)gcc LD=$(CROSS_COMPILE)ld AR=$(CROSS_COMPILE)ar
 export KERNEL_LLVM = 0
-export NO_PRECOMPILED_MODULE = 1
 export LIBNSL_DEPRECATED = 1
 else
 # Needed for a warning in src/soc/phy/fcmap/src/bfcmap88060_a0.c that can't be
@@ -112,15 +111,6 @@ CFGFLAGS += -DBCM_PLATFORM_STRING=\"SLK_BCM957812\"
 CFGFLAGS += -DSAL_BDE_DMA_MEM_DEFAULT=32
 CFGFLAGS += -D_SIMPLE_MEMORY_ALLOCATION_=1
 
-ifdef DPP_CHIPS
-CFGFLAGS += -DDUNE_BCM -D__DUNE_LINUX_BCM_CPU_PCP_DMA__
-CFGFLAGS += -DSOC_CM_FUNCTION
-endif
-
-ifdef DFE_CHIPS
-CFGFLAGS += -DDUNE_BCM
-CFGFLAGS += -DSOC_CM_FUNCTION
-endif
 
 ifdef SAND_CHIPS
 CFGFLAGS += -D__DUNE_SLK_BCM_CPU__ -D__DUNE_LINUX_BCM_CPU_PCIE__
@@ -156,12 +146,6 @@ name-fix = $(subst $(comma),_,$(subst -,_,$1))
 basename_flags = -D"KBUILD_BASENAME=KBUILD_STR($(call name-fix,$(basetarget)))"
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
                  -D"KBUILD_MODNAME=KBUILD_STR($(call name-fix,$(modname)))")
-
-KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
-
-ifeq (,$(KFLAGS))
-KFLAGS := -D__LINUX_ARM_ARCH__=8 -D__KERNEL__ -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS -nostdinc -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm64/include -I$(KERNDIR)/arch/arm64/include/generated -I$(KERNDIR)/arch/arm64/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/generated/asm -I$(KERNDIR)/include/uapi -I$(KERNDIR)/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/uapi  -Wall -Wstrict-prototypes -Wno-trigraphs -O2 -fno-strict-aliasing -fno-common -fno-pic -pipe -ffreestanding -fomit-frame-pointer -g -fno-stack-protector -Wdeclaration-after-statement -Wno-pointer-sign -mcmodel=large
-endif
 
 # Default open source target build
 OPENSRC_BUILD ?= linaro_arm64_le

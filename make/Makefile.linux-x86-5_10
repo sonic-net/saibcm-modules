@@ -88,6 +88,13 @@ else ifeq (1,$(GCC_14_1_0))
       OPT_CFLAGS += -Wno-error=array-bounds=
     # }
     endif
+else ifeq (1,$(GCC_15_2_0))
+    export GCCVER := 15.2.0
+    TOOLCHAIN_DIR = /tools/oss/packages/x86_64-rhel$(RHEL_VERSION)/gcc/$(GCCVER)
+    # GCC 15 defaults to C23 where bool/true/false are keywords.
+    # Add -std=gnu17 to OPT_CFLAGS to avoid conflicts
+    # with the SDK code that define these.
+    OPT_CFLAGS += -std=gnu17
 else
     export GCCVER := 11.2.0
     TOOLCHAIN_DIR = /tools/oss/packages/x86_64-rhel$(RHEL_VERSION)/gcc/$(GCCVER)
@@ -150,38 +157,6 @@ endif
 CFGFLAGS += -DUSE_LINUX_BDE_MMAP=1
 #CFGFLAGS += -DBDE_LINUX_USE_MSI_INTERRUPT
 #
-
-# set up KFLAGS appropriately. #
-# -fno-builtin needed for using kernel's version of memcpy instead of the gcc inline version
-ifeq (,$(KFLAGS))
-# {
-  KFLAGS := -I$(KERNDIR) -nostdinc -isystem $(SYSINC) -Iinclude -I$(KERNDIR)/arch/x86/include -I$(KERNDIR)/arch/x86/include/asm  -I$(KERNDIR)/arch/x86/include/generated  -I$(KERNDIR)/arch/x86/include/generated/uapi  -I$(KERNDIR)/arch/x86/include/uapi -I$(KERNDIR)/include -I$(KERNDIR)/include/generated -I$(KERNDIR)/include/uapi -include $(KERNDIR)/include/generated/autoconf.h -D__KERNEL__ -DNDEBUG -Wundef -Wno-error=unused-value -Wno-error=cpp -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Wno-format-security -O2 -m64 -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -fstack-protector -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -Wframe-larger-than=1024 -fno-omit-frame-pointer -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fno-dwarf2-cfi-asm -fno-builtin
-  #
-  # Current version of CLANG seems to not recognize some of the options of kernel FLAGS.
-  #
-ifneq (1,$(USE_CLANG))
-# {
-  KFLAGS += -Wno-error=maybe-uninitialized -lc -fno-delete-null-pointer-checks -maccumulate-outgoing-args -fconserve-stack -mpreferred-stack-boundary=3
-# }
-else
-# {
-  KFLAGS +=  -Wno-error=address-of-packed-member
-# }
-endif
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
-  KFLAGS += -DNO_PRECOMPILED_MODULE=1
-  export KFLAGS
-# }
-else
-# {
-  KFLAGS += -DNO_PRECOMPILED_MODULE=0
-# }
-endif
-
-# }
-endif
-
 
 ######################################################################
 # this segment comes from make/Makefile.linux-x86-smp_generic_64-2_6 #

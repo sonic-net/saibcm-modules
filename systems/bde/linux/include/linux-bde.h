@@ -272,12 +272,6 @@ extern int lkbde_irq_mask_get(int d, uint32 *mask, uint32 *fmask);
 extern int lkbde_irq_status_get(int d, uint32_t addr, uint32 *status);
 extern int lkbde_irq_clear_set(int d, uint32 addr);
 
-#ifdef BCM_SAND_SUPPORT
-extern int lkbde_cpu_write(int d, uint32 addr, uint32 *buf);
-extern int lkbde_cpu_read(int d, uint32 addr, uint32 *buf);
-extern int lkbde_cpu_pci_register(int d);
-#endif
-
 extern int lkbde_intr_cb_register(int d,
                                   int (*intr_pending)(void*),
                                   void *intr_pending_data);

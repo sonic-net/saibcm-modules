@@ -473,14 +473,17 @@ genl_proc_debug_write(struct file *file, const char *buf,
 {
     char debug_str[40];
     char *ptr;
+    size_t len;
 
-    if (count >= sizeof(debug_str)) {
-        count = sizeof(debug_str) - 1;
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
     }
-    if (copy_from_user(debug_str, buf, count)) {
+
+    len = (count >= sizeof(debug_str)) ? sizeof(debug_str) - 1 : count;
+    if (copy_from_user(debug_str, buf, len)) {
         return -EFAULT;
     }
-    debug_str[count] = '\0';
+    debug_str[len] = '\0';
 
     if ((ptr = strstr(debug_str, "debug=")) != NULL) {
         ptr += 6;
@@ -545,6 +548,10 @@ genl_proc_stats_write(struct file *file, const char *buf,
     int qlen_cur = 0;
     unsigned long flags;
 
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
+    }
+
     spin_lock_irqsave(&g_genl_work.lock, flags);
     qlen_cur = g_genl_stats.pkts_c_qlen_cur;
     memset(&g_genl_stats, 0, sizeof(genl_stats_t));
@@ -577,14 +584,14 @@ genl_cb_proc_init(char *procfs_path)
     genl_proc_root = proc_mkdir(genl_procfs_path, NULL);
 
     /* create procfs for generic stats */
-    PROC_CREATE(entry, "stats", 0666, genl_proc_root,
+    PROC_CREATE(entry, "stats", 0644, genl_proc_root,
                 &genl_proc_stats_file_ops);
     if (entry == NULL) {
         return -1;
     }
 
     /* create procfs for debug log */
-    PROC_CREATE(entry, "debug", 0666, genl_proc_root, &genl_proc_debug_file_ops);
+    PROC_CREATE(entry, "debug", 0644, genl_proc_root, &genl_proc_debug_file_ops);
     if (entry == NULL) {
         return -1;
     }

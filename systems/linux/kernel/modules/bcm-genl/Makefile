@@ -28,71 +28,81 @@
 # 
 # 
 #
+# BCM Generic Netlink Interface
+#
 LOCALDIR = systems/linux/kernel/modules/bcm-genl
 
 include ${SDK}/make/Make.config
 
-LIBS = $(LIBDIR)/libkern.a
-
 ifndef DCBDIR
 $(error 'The $$DCBDIR variable is not set')
 endif
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-$(error 'DCB_LIB build is not supported if NO_PRECOMPILED_MODULE=1')
-endif
-LIBS += $(LIBDIR)/libdcb.a
-CFLAGS += -DDCBLIB_SUPPORT -I$(DCBDIR)/include
+LKM_CPPFLAGS += -DDCBLIB_SUPPORT -I$(DCBDIR)/include
+DCB_VSRCS := $(shell find $(DCBDIR) -name test -prune -o -name \*.c -print)
+DCB_LSRCS := $(notdir $(DCB_VSRCS))
+DCB_OBJS := $(DCB_LSRCS:.c=.o)
 ifeq (1,$(BUILD_GENL_PACKET))
-CFLAGS += -I${SDK}/systems/linux/kernel/modules/include/kernel
+LKM_CPPFLAGS += -I${SDK}/systems/linux/kernel/modules/include/kernel
 endif
 
 ifdef LTSW_CHIPS
 # bcmdrd_config.h is required for enum_max.h when LTSW devices are included
-CFLAGS += -I${SDKLT}/bcmdrd/include
+LKM_CPPFLAGS += -I${SDKLT}/bcmdrd/include
 endif
 
-KERNEL_MODULE_DIR = kernel_module
+GENL_LHDRS := $(wildcard *.h)
+GENL_LSRCS := $(wildcard *.c)
+GENL_OBJS := $(GENL_LSRCS:.c=.o)
 
-THIS_MOD_NAME := linux-bcm-genl
-MODULE = $(LIBDIR)/$(THIS_MOD_NAME).o
-KMODULE = $(LIBDIR)/$(THIS_MOD_NAME).ko
+export LKM_CPPFLAGS
 
-# BCM Network Device
-# {
-KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../bcm-knet/kernel_module/Module.symvers
+export MOD_NAME := linux-bcm-genl
+
+export MOD_OBJS := \
+	$(GENL_OBJS) \
+	$(DCB_OBJS) \
+	gmodule.o
+
+KMODULE = $(LIBDIR)/$(MOD_NAME).ko
+
+build: $(KMODULE)
+
+#
+# KBUILD_EXTRA_SYMBOLS exports the symbols created on the first module
+# compilation to all other module compilations.
+#
+KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../bcm-knet/Module.symvers
 ifeq (1,$(BUILD_GENL_PACKET))
-KBUILD_EXTRA_SYMBOLS += ${BLDDIR}/../genl-packet/kernel_module/Module.symvers
+KBUILD_EXTRA_SYMBOLS += ${BLDDIR}/../genl-packet/Module.symvers
 endif
-export KBUILD_EXTRA_SYMBOLS
 
-build: $(MODULE) $(KMODULE)
 #
-# This is for the compilation of the 'precompiled' object. We keep it
-# here for compatibility.
+# Suppress symlink error messages.
 #
-$(LIBDIR)/libdcb.a:
-	$(MAKE) -C $(DCBDIR)/make BLDDIR=$(LIBDIR) \
-		KADD_CFLAGS="-I${SDK}/systems/linux/kernel/modules/include $(KFLAGS) -D$(ENDIAN)" \
-		CROSS_COMPILE=$(CROSS_COMPILE)
+# Note that we do not use "ln -f" as this may cause failures if
+# multiple builds are done in parallel on the same source tree.
+#
+R = 2>/dev/null
 
-$(MODULE): $(BLDDIR)/.tree $(BOBJS) $(LIBS)
-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
+mklinks:
+	mkdir -p $(BLDDIR)
+	rm -f $(BLDDIR)/*.c
+	rm -f $(BLDDIR)/*.h
+	rm -f $(BLDDIR)/Makefile
+	-ln -sr ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/Makefile $(R)
+	-ln -sr bcm-genl.c $(BLDDIR) $(R)
+	-for f in $(GENL_LHDRS); do ln -sr $$f $(BLDDIR) $(R); done
+	-for f in $(GENL_LSRCS); do ln -sr $$f $(BLDDIR) $(R); done
+	-for f in $(DCB_VSRCS); do ln -sr $$f $(BLDDIR) $(R); done
+	-ln -sr ../../../../linux/kernel/modules/shared/gmodule.c $(BLDDIR) $(R)
 
-$(KMODULE): $(MODULE)
-	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	mkdir $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/$(KERNEL_MODULE_DIR)/Makefile
-	cat ${KBUILD_EXTRA_SYMBOLS} > $(BLDDIR)/$(KERNEL_MODULE_DIR)/Module.symvers
-	MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR)/$(KERNEL_MODULE_DIR) $(THIS_MOD_NAME).ko
-# }
-
-# Make.depend is before clean:: so that Make.depend's clean:: runs first.
-
-include ${SDK}/make/Make.depend
+$(KMODULE): mklinks
+	$(MAKE) -C $(BLDDIR) KBUILD_EXTRA_SYMBOLS="$(KBUILD_EXTRA_SYMBOLS)"
 
 clean::
-	$(RM) $(BLDDIR)/version.c $(BLDDIR)/version.o
-	$(RM) $(BOBJS) $(MODULE)
-	$(MAKE) -C $(DCBDIR)/make BLDDIR=$(LIBDIR) clean
+	rm -f $(KMODULE)
+	rm -rf $(BLDDIR)
 
-.PHONY: build
+distclean::
+
+.PHONY: build mklinks $(KMODULE)

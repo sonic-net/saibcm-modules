@@ -43,19 +43,13 @@ SDK :=$(shell if [ -n "$$SDK" ] ; then\
 	pwd;					\
 	fi)
 
-ifeq ($(SDK),)					
-$(error Please run this in a tree)		
-endif 				
+ifeq ($(SDK),)
+$(error Please run this in a tree)
+endif
 
 export SDK
 
 override-target=linux-$(platform)
-
-ifeq ($(LINUX_MAKE_SHARED_LIB),1)
-libext = so.$(SHAREDLIBVER)
-else
-libext = a
-endif
 
 ifeq (,$(platform))
 $(error Internal error: platform variable is not set)
@@ -77,13 +71,7 @@ endif
 endif
 
 ifeq (,$(kernel_version))
-kernel_version=2_4
-endif
-
-ifneq ($(kernel_version),2_4)
-KOBJ=ko
-else
-KOBJ=o
+kernel_version = none
 endif
 
 ifneq (,$(TOOLS_DIR))
@@ -104,33 +92,33 @@ ifndef KDIR
 export KDIR=$(KERNDIR)
 endif
 
-KERNEL_BDE_LOCAL := linux-kernel-bde.$(KOBJ)
+KERNEL_BDE_LOCAL := linux-kernel-bde.ko
 KERNEL_BDE := $(DEST_DIR)/$(KERNEL_BDE_LOCAL)
 
-USER_BDE_LOCAL := linux-user-bde.$(KOBJ)
+USER_BDE_LOCAL := linux-user-bde.ko
 USER_BDE := $(DEST_DIR)/$(USER_BDE_LOCAL)
 
-KNET_CB_LOCAL := linux-knet-cb.$(KOBJ)
+KNET_CB_LOCAL := linux-knet-cb.ko
 KNET_CB := $(DEST_DIR)/$(KNET_CB_LOCAL)
 
 export BUILD_BCM_GENL=0
 export BUILD_GENL_PACKET=0
-GENL_PACKET_LOCAL := genl-packet.$(KOBJ)
+GENL_PACKET_LOCAL := genl-packet.ko
 GENL_PACKET := $(DEST_DIR)/$(GENL_PACKET_LOCAL)
 ifndef BUILD_GENL_PACKET
 export BUILD_GENL_PACKET = 1
 endif
 
-BCM_GENL_LOCAL := linux-bcm-genl.$(KOBJ)
+BCM_GENL_LOCAL := linux-bcm-genl.ko
 BCM_GENL := $(DEST_DIR)/$(BCM_GENL_LOCAL)
 
-BCM_KNET_LOCAL := linux-bcm-knet.$(KOBJ)
+BCM_KNET_LOCAL := linux-bcm-knet.ko
 BCM_KNET := $(DEST_DIR)/$(BCM_KNET_LOCAL)
 
-BCM_NGKNET_LOCAL := linux-ngknet.$(KOBJ)
+BCM_NGKNET_LOCAL := linux-ngknet.ko
 BCM_NGKNET := $(DEST_DIR)/$(BCM_NGKNET_LOCAL)
 
-NGKNETCB_LOCAL := linux-ngknetcb.$(KOBJ)
+NGKNETCB_LOCAL := linux-ngknetcb.ko
 NGKNETCB := $(DEST_DIR)/$(NGKNETCB_LOCAL)
 
 ifeq (,$(findstring DELIVER,$(MAKECMDGOALS)))
@@ -200,7 +188,6 @@ ifdef BUILD_PSAMPLE
 ADD_TO_CFLAGS += -DPSAMPLE_SUPPORT
 endif
 ADD_TO_CFLAGS += -I$(SDK)/systems/linux/kernel/modules/include
-COND_KNET_LIBS = libuser.$(libext)
 endif
 
 ifeq (1,$(BUILD_NGKNET))
@@ -229,7 +216,7 @@ endif
 endif
 
 ifeq (1,$(BUILD_NGKNET))
-NGKNET_BDE_BLDDIR = $(KERN_BLDROOT)/systems/bde/linux/kernel/kernel_module
+NGKNET_BDE_BLDDIR = $(KERN_BLDROOT)/systems/bde/linux/kernel
 NGKNET_LKM_BLDROOT = $(KERN_BLDROOT)/systems/linux/kernel/modules/bcm-ngknet
 NGKNET_BLDDIR = $(NGKNET_LKM_BLDROOT)
 endif # BUILD_NGKNET
@@ -267,8 +254,6 @@ kernel_modules:
 	$(MAKE) -C $(SDK)/systems/bde/linux/user/kernel $(OPT_KERNEL_TOOLCHAIN) kernel_version=$(kernel_version) \
 		OPT_CFLAGS="$(ADD_TO_KCFLAGS)"
 ifeq ($(BUILD_KNET),1)
-	$(MAKE) -C $(SDK)/systems/linux/kernel/modules/shared $(OPT_KERNEL_TOOLCHAIN) kernel_version=$(kernel_version) \
-		OPT_CFLAGS="$(ADD_TO_KCFLAGS)" override-target=linux-$(platform)
 	$(MAKE) -C $(SDK)/systems/linux/kernel/modules/bcm-knet $(OPT_KERNEL_TOOLCHAIN) kernel_version=$(kernel_version) \
 		OPT_CFLAGS="$(ADD_TO_KCFLAGS)" override-target=linux-$(platform)
 ifneq (,$(filter knet-cb,$(knet_subdirs)))
@@ -322,7 +307,7 @@ $(GENL_PACKET): $(KERN_BLDROOT)/$(GENL_PACKET_LOCAL)
 $(BCM_GENL): $(KERN_BLDROOT)/$(BCM_GENL_LOCAL)
 	$(OBJCOPY) --strip-debug $< $@
 
-$(KERN_BLDROOT)/%.$(KOBJ): kernel_modules
+$(KERN_BLDROOT)/%.ko: kernel_modules
 	@echo Force execution of kernel_modules target > /dev/null
 
 ifeq ($(NO_LOCAL_TARGETS),)
@@ -333,7 +318,7 @@ clean::
 	$(MAKE) -C $(SDK)/systems/bde/linux/kernel $@
 	$(MAKE) -C $(SDK)/systems/bde/linux/user/kernel $@
 	$(MAKE) -C $(SDK)/systems/linux/kernel/modules \
-		subdirs="shared $(knet_subdirs)" \
+		subdirs="$(knet_subdirs)" \
 		override-target=linux-$(platform) $@
 	$(RM) $(KERNEL_BDE) $(USER_BDE)
 	$(RM) $(BCM_KNET) $(KNET_CB) $(GENL_PACKET) $(BCM_GENL)

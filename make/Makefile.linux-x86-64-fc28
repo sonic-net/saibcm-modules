@@ -150,34 +150,6 @@ endif
 CFGFLAGS += -DUSE_LINUX_BDE_MMAP=1
 #CFGFLAGS += -DBDE_LINUX_USE_MSI_INTERRUPT
 
-# set up KFLAGS appropriately. #
-# -fno-builtin needed for using kernel's version of memcpy instead of the gcc inline version
-ifeq (,$(KFLAGS))
-# {
-  KFLAGS := -I$(KERNDIR) -nostdinc -isystem $(SYSINC) -Iinclude -I$(KERNDIR)/arch/x86/include -I$(KERNDIR)/arch/x86/include/asm  -I$(KERNDIR)/arch/x86/include/generated  -I$(KERNDIR)/arch/x86/include/generated/uapi  -I$(KERNDIR)/arch/x86/include/uapi -I$(KERNDIR)/include -I$(KERNDIR)/include/generated -I$(KERNDIR)/include/uapi -include $(KERNDIR)/include/generated/autoconf.h -D__KERNEL__ -DNDEBUG -Wundef -Wno-error=unused-value -Wno-error=cpp -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Wno-format-security -O2 -m64 -mtune=generic -mno-red-zone -mcmodel=kernel -funit-at-a-time -fstack-protector -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -Wframe-larger-than=1024 -fno-omit-frame-pointer -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fno-dwarf2-cfi-asm -fno-builtin
-  #
-  # Current version of CLANG seems to not recognize some of the options of kernel FLAGS.
-  #
-ifneq (1,$(USE_CLANG))
-# {
-  KFLAGS += -Wno-error=maybe-uninitialized -lc -fno-delete-null-pointer-checks -maccumulate-outgoing-args -fconserve-stack -mpreferred-stack-boundary=3
-# }
-endif
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
-  KFLAGS += -DNO_PRECOMPILED_MODULE=1
-  export KFLAGS
-# }
-else
-# {
-  KFLAGS += -DNO_PRECOMPILED_MODULE=0
-# }
-endif
-
-# }
-endif
-
-
 CFGFLAGS += -D_SIMPLE_MEMORY_ALLOCATION_=9
 
 export LIBNSL_DEPRECATED := 1
@@ -248,10 +220,8 @@ basename_flags = -D"KBUILD_BASENAME=KBUILD_STR($(call name-fix,$(basetarget)))"
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
 -D"KBUILD_MODNAME=KBUILD_STR($(call name-fix,$(modname)))")
 
-ifeq (EDK,$(findstring EDK,$(FEATURE_LIST)))
 # Default open source target build
 OPENSRC_BUILD ?= fed21-x86_64
-endif
 
 ifneq ($(targetplat),user)
 # By default we exclude -Werror from x86 kernel builds

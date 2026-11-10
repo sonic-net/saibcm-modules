@@ -60,6 +60,8 @@ typedef struct {
 
 static uint32 g_sample_rate;
 static uint32 g_sample_size;
+static uint32 g_egr_sample_rate;
+static uint32 g_egr_sample_size;
 
 static int
 knet_netif_create_cb(struct net_device *dev, int dev_no, kcom_netif_t *netif)
@@ -84,6 +86,8 @@ knet_netif_create_cb(struct net_device *dev, int dev_no, kcom_netif_t *netif)
     bcmgenl_netif->qnum = netif->qnum;
     bcmgenl_netif->sample_rate = g_sample_rate;
     bcmgenl_netif->sample_size = g_sample_size;
+    bcmgenl_netif->egr_sample_rate = g_egr_sample_rate;
+    bcmgenl_netif->egr_sample_size = g_egr_sample_size;
 
     /* insert netif sorted by ID similar to bkn_knet_netif_create() */
     spin_lock_irqsave(&g_netif_info.lock, flags);
@@ -256,6 +260,19 @@ bcmgenl_netif_default_sample_set(int sample_rate, int sample_size)
     }
     if (sample_size >= 0) {
         g_sample_size = sample_size;
+    }
+
+    return 0;
+}
+
+int
+bcmgenl_netif_default_egr_sample_set(int sample_rate, int sample_size)
+{
+    if (sample_rate >= 0) {
+        g_egr_sample_rate = sample_rate;
+    }
+    if (sample_size >= 0) {
+        g_egr_sample_size = sample_size;
     }
 
     return 0;

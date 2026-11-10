@@ -40,8 +40,10 @@ typedef struct {
     unsigned short  port;
     unsigned short vlan;
     unsigned short qnum;
-    unsigned int sample_rate;
-    unsigned int sample_size;
+    unsigned int sample_rate; /* sFlow sample rate */
+    unsigned int sample_size; /* sFlow sample size */
+    unsigned int egr_sample_rate; /* sFlow egress sample rate (optional) */
+    unsigned int egr_sample_size; /* sFlow egress sample size (optional) */
 } bcmgenl_netif_t;
 
 typedef int
@@ -61,6 +63,9 @@ bcmgenl_netif_get_by_port(int port, bcmgenl_netif_t *bcmgenl_netif);
 
 extern int
 bcmgenl_netif_default_sample_set(int sample_rate, int sample_size);
+
+extern int
+bcmgenl_netif_default_egr_sample_set(int sample_rate, int sample_size);
 
 extern int
 bcmgenl_netif_init(void);
