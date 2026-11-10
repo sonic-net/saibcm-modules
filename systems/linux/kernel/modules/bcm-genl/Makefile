@@ -35,7 +35,8 @@ LOCALDIR = systems/linux/kernel/modules/bcm-genl
 include ${SDK}/make/Make.config
 
 ifndef DCBDIR
-$(error 'The $$DCBDIR variable is not set')
+DCBDIR = $(SDK)/systems/linux/kernel/modules/dcb
+# $(error 'The $$DCBDIR variable is not set')
 endif
 LKM_CPPFLAGS += -DDCBLIB_SUPPORT -I$(DCBDIR)/include
 # Pass the same chip-support flags used by the DCB library standalone Makefile,
