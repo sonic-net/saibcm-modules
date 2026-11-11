@@ -49,6 +49,3 @@ clean_subdirs: ${subdirs}
 
 .PHONY: clean_subdirs
 
-ifeq ($(DNX_FAST_MODE),1)
--include $(SDK)/tools/dnx/make/subdirs.mk
-endif

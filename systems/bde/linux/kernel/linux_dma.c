@@ -148,6 +148,10 @@
 #define BDE_DMA_MAPPING_ERROR(d, p)     dma_mapping_error((p))
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,12,0))
+#define dma_set_mask_and_coherent(d, m) 0
+#endif
+
 #ifndef KMALLOC_MAX_SIZE
 #define KMALLOC_MAX_SIZE (1UL << (MAX_PAGE_ORDER + PAGE_SHIFT))
 #endif
@@ -245,6 +249,12 @@ static char *himemaddr = 0;
 LKM_MOD_PARAM(himemaddr, "s", charp, 0);
 MODULE_PARM_DESC(himemaddr,
 "Physical address to use for high memory DMA");
+
+/* Allow DMA beyond 4GB (>32-bit physical address) */
+static int dma4gb = 0;
+LKM_MOD_PARAM(dma4gb, "i", int, 0);
+MODULE_PARM_DESC(dma4gb,
+"Allow DMA above 4GB (default 0)");
 
 /* DMA memory allocation */
 
@@ -706,6 +716,10 @@ _edk_mpool_alloc(int dev_id, size_t size)
     struct device *dev = DMA_DEV(DMA_DEV_INDEX);
     unsigned long pbase = 0;
 
+    if (dev_id < 0 || dev_id >= LINUX_BDE_MAX_DEVICES) {
+        return;
+    }
+
     dma_vbase = _pgalloc(size);
     if (!dma_vbase) {
         gprintk("Failed to allocate memory pool of size 0x%lx for EDK\n",
@@ -742,6 +756,10 @@ _edk_mpool_alloc(int dev_id, size_t size)
 int
 lkbde_edk_get_dma_info(int dev_id, phys_addr_t* cpu_pbase, phys_addr_t* dma_pbase, ssize_t* size)
 {
+    if (dev_id < 0 || dev_id >= LINUX_BDE_MAX_DEVICES) {
+        return -1;
+    }
+
     if (_edk_dma_pool[dev_id].dma_vbase == NULL) {
         _edk_mpool_alloc(dev_id, *size * ONE_MB);
     }
@@ -761,6 +779,10 @@ lkbde_edk_get_dma_info(int dev_id, phys_addr_t* cpu_pbase, phys_addr_t* dma_pbas
 void *
 lkbde_edk_dmamem_map_p2v(int dev_no, dma_addr_t paddr)
 {
+    if (dev_no < 0 || dev_no >= LINUX_BDE_MAX_DEVICES) {
+        return NULL;
+    }
+
     if ((paddr >= _edk_dma_pool[dev_no].dma_pbase) &&
             (paddr < (_edk_dma_pool[dev_no].dma_pbase + _edk_dma_pool[dev_no].size))) {
         return (_edk_dma_pool[dev_no].dma_vbase + (paddr - _edk_dma_pool[dev_no].dma_pbase));
@@ -782,12 +804,13 @@ _edk_vm_is_valid(struct file *filp, struct vm_area_struct *vma)
 
     ndevices = LINUX_BDE_MAX_DEVICES;
     for (i = 0; i < ndevices; i++) {
-        if (_edk_dma_pool[i].dma_vbase) {
-            if (phys_addr < (unsigned long )_edk_dma_pool[i].cpu_pbase ||
-                (phys_addr + size) > ((unsigned long )_edk_dma_pool[i].cpu_pbase +
-                                   _edk_dma_pool[i].size)) {
-                continue;
-            }
+        if (_edk_dma_pool[i].dma_vbase == NULL) {
+            continue;
+        }
+        if (phys_addr < (unsigned long )_edk_dma_pool[i].cpu_pbase ||
+            (phys_addr + size) > ((unsigned long )_edk_dma_pool[i].cpu_pbase +
+                               _edk_dma_pool[i].size)) {
+            continue;
         }
         return 1;
     }
@@ -987,7 +1010,6 @@ void _dma_per_device_init(int dev_index)
     dma_addr_t dma_addr;
     struct device *dev;
     int performed_initial_pool_mapping = 0;
-    int dma64_support = 0;
 
     if (dma_debug >= 2) {
         gprintk("_dma_per_device_init dev_index:%d _use_dma_mapping:%d kernel_virt:0x%lx physical:0x%lx size:0x%x dmaalloc:%d\n",
@@ -1003,10 +1025,20 @@ void _dma_per_device_init(int dev_index)
         return;
     }
 
+#if defined(IPROC_CMICD) && defined(CONFIG_OF)
+    if (of_find_compatible_node(NULL, NULL, "brcm,iproc-cmicx")) {
+        dma4gb = 1;
+    }
+#endif
+
 #if _SIMPLE_MEMORY_ALLOCATION_
     if (_dma_pool_alloc_state == DMA_POOL_INITIALIZED && dmaalloc == ALLOC_TYPE_API) {
+        if (dma4gb == 1 && dma_set_mask_and_coherent(dev, DMA_BIT_MASK(48)) != 0) {
+            gprintk("Failed to increase DMA address capability\n");
+        }
         /* allocate the DMA buffer pool and map it to the device, uses CMA */
-        _dma_vbase = dma_alloc_attrs(dev, _dma_mem_size, &dma_addr, GFP_KERNEL, DMA_FORCE_CONTIGUOUS);
+        _dma_vbase = dma_alloc_attrs(dev, _dma_mem_size, &dma_addr,
+                                     GFP_KERNEL, DMA_FORCE_CONTIGUOUS);
         if (!_dma_vbase) {
             _dma_pool_alloc_state = DMA_POOL_FAILED;
             gprintk("Failed to allocate coherent memory pool of size 0x%x\n", _dma_mem_size);
@@ -1048,13 +1080,7 @@ void _dma_per_device_init(int dev_index)
 
     /* On the first mapping of the DMA buffer pool, check the mapped address and mark it as mapped */
     if (performed_initial_pool_mapping) {
-#if defined(IPROC_CMICD) && defined(CONFIG_OF)
-        if (of_find_compatible_node(NULL, NULL, "brcm,iproc-cmicx")) {
-            dma64_support = 1;
-        }
-#endif
-
-        if (!dma64_support && ((dma_addr + (_dma_mem_size - 1)) >> 16) > DMA_BIT_MASK(16)) {
+        if (!dma4gb && ((dma_addr + (_dma_mem_size - 1)) >> 16) > DMA_BIT_MASK(16)) {
             gprintk("DMA memory allocated at dma_bus:0x%lx size 0x%x is beyond the 4GB limit and not supported.\n", (unsigned long)dma_addr, _dma_mem_size);
             _mpool_free();
             _dma_pool_alloc_state = DMA_POOL_FAILED;
@@ -1072,9 +1098,9 @@ void _dma_per_device_init(int dev_index)
 #endif
 
         if (dma_debug >= 1) {
-            gprintk("Mapped DMA buffer pool _use_dma_mapping:%d kernel_virt:0x%lx dma_bus:0x%lx physical:0x%lx size:0x%x dmaalloc:%d, dma64_support:%d\n",
+            gprintk("Mapped DMA buffer pool _use_dma_mapping:%d kernel_virt:0x%lx dma_bus:0x%lx physical:0x%lx size:0x%x dmaalloc:%d, dma4gb:%d\n",
                     _use_dma_mapping, (unsigned long)_dma_vbase, (unsigned long)_dma_pbase,
-                    (unsigned long)_cpu_pbase, _dma_mem_size, dmaalloc, dma64_support);
+                    (unsigned long)_cpu_pbase, _dma_mem_size, dmaalloc, dma4gb);
         }
 
         /* DMA buffer pool initialization */
@@ -1172,8 +1198,11 @@ int _dma_mmap(struct file *filp, struct vm_area_struct *vma)
     unsigned long phys_addr = vma->vm_pgoff << PAGE_SHIFT;
     unsigned long size = vma->vm_end - vma->vm_start;
 
-    if (phys_addr < (unsigned long )_cpu_pbase ||
-        (phys_addr + size) > ((unsigned long )_cpu_pbase + _dma_mem_size)) {
+    /* Check that the requested area is not outside the kernel DMA block */
+    if ((phys_addr >> PAGE_SHIFT) != vma->vm_pgoff ||
+        size > (unsigned long)_dma_mem_size ||
+        phys_addr < (unsigned long )_cpu_pbase ||
+        phys_addr - (unsigned long )_cpu_pbase > (unsigned long)_dma_mem_size - size) {
 #ifdef BDE_EDK_SUPPORT
         if(!_edk_vm_is_valid(filp, vma)) {
             gprintk("range 0x%lx-0x%lx outside DMA pool\n", phys_addr, phys_addr + size);
@@ -1323,9 +1352,10 @@ _dma_pprint(struct seq_file *m)
     pprintf(m, "\tdmasize=%s\n", dmasize);
     pprintf(m, "\thimem=%s\n", himem);
     pprintf(m, "\thimemaddr=%s\n", himemaddr);
-    pprintf(m, "DMA Memory (%s): %d bytes allocated%s\n",
+    pprintf(m, "DMA Memory (%s): %d bytes allocated @0x%lx(0x%lx)%s\n",
             (_use_himem) ? "high" : dmaalloc ? "kernel-api" : "kernel-chunk",
             (_dma_vbase) ? _dma_mem_size : 0,
+            (long unsigned)_cpu_pbase, (long unsigned)_dma_pbase,
             USE_LINUX_BDE_MMAP ? ", local mmap" : "");
 }
 

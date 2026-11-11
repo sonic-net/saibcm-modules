@@ -200,16 +200,6 @@ shbde_iproc_config_init(shbde_iproc_config_t *icfg,
         break;
     }
 
-    /* Check for exceptions */
-    switch (icfg->dev_id) {
-    case 0xb168: /* Ranger3+ */
-    case 0xb169:
-        icfg->iproc_ver = 0;
-        icfg->dma_hi_bits = 0;
-        break;
-    default:
-        break;
-    }
     /* Check for PCIe PHY address that needs PCIe preemphasis and
      * assign the MDIO base address
      */

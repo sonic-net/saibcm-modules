@@ -109,6 +109,10 @@ typedef struct ibde_s {
 #define BDE_TEST_DEVICES 1
 #endif
 
+#ifdef BDE_TEST_DEVICES
+#define BDE_TEST_DEV_TYPE (BDE_I2C_DEV_TYPE | BDE_USER_DEV_TYPE)
+#endif
+
 /* Bus supports only 16bit reads */
 #define BDE_DEV_BUS_RD_16BIT  SAL_DEV_BUS_RD_16BIT 
 

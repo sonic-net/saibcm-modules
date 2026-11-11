@@ -97,19 +97,8 @@ endif
 #			 this Makefile, to define local "Extra" flags.
 #
 
-ifdef IPROC_BUILD
 CFGFLAGS += -I$(SDK)/systems/linux/kernel/modules/include \
-	    -I$(SDK)/systems/bde/linux/include \
-	    -I$(LINUX_INCLUDE) \
-            -I$(KERNDIR)/arch/$(ARCH)
-else
-CFGFLAGS += -I$(SDK)/systems/linux/kernel/modules/include \
-	    -I$(SDK)/systems/bde/linux/include \
-	    -I$(LINUX_INCLUDE) \
-	    -I$(LINUX_INCLUDE)/asm/gcc \
-	    -I$(LINUX_INCLUDE)/asm/mach-generic \
-            -I$(KERNDIR)/arch/$(ARCH)
-endif
+	    -I$(SDK)/systems/bde/linux/include
 
 CFGFLAGS += -DNO_FILEIO -DNO_CTRL_C -DNO_MEMTUNE
 
@@ -118,7 +107,7 @@ CFGFLAGS += -D$(OSTYPE)
 # No user sal for the linux kernel
 # NO_SAL_APPL=1
 
-STD_CFLAGS = $(KFLAGS) $(CFGFLAGS)
+STD_CFLAGS = $(CFGFLAGS)
 
 
 STD_CPPFLAGS = ${STD_CFLAGS}

@@ -1258,67 +1258,6 @@ _devices_init(int d)
         case BCM53549_DEVICE_ID:
             ctrl->isr = _cmicd_cmc0_interrupt;
             break;
-        case BCM88670_DEVICE_ID:
-        case BCM88671_DEVICE_ID:
-        case BCM88671M_DEVICE_ID:
-        case BCM88672_DEVICE_ID:
-        case BCM88673_DEVICE_ID:
-        case BCM88674_DEVICE_ID:
-        case BCM88675_DEVICE_ID:
-        case BCM88675M_DEVICE_ID:
-        case BCM88676_DEVICE_ID:
-        case BCM88676M_DEVICE_ID:
-        case BCM88677_DEVICE_ID:
-        case BCM88678_DEVICE_ID:
-        case BCM88679_DEVICE_ID:
-        case BCM88370_DEVICE_ID:
-        case BCM88371_DEVICE_ID:
-        case BCM88371M_DEVICE_ID:
-        case BCM88375_DEVICE_ID:
-        case BCM88376_DEVICE_ID:
-        case BCM88376M_DEVICE_ID:
-        case BCM88377_DEVICE_ID:
-        case BCM88378_DEVICE_ID:
-        case BCM88379_DEVICE_ID:
-        case BCM88681_DEVICE_ID:
-        case BCM88682_DEVICE_ID:
-        case BCM88683_DEVICE_ID:
-        case BCM88684_DEVICE_ID:
-        case BCM88685_DEVICE_ID:
-        case BCM88687_DEVICE_ID:
-        case BCM88380_DEVICE_ID:
-        case BCM88381_DEVICE_ID:
-        case BCM88680_DEVICE_ID:
-        case BCM88770_DEVICE_ID:
-        case BCM88773_DEVICE_ID:
-        case BCM88774_DEVICE_ID:
-        case BCM88775_DEVICE_ID:
-        case BCM88776_DEVICE_ID:
-        case BCM88777_DEVICE_ID:
-        case BCM88470_DEVICE_ID:
-        case BCM88470P_DEVICE_ID:
-        case BCM88471_DEVICE_ID:
-        case BCM88473_DEVICE_ID:
-        case BCM88474_DEVICE_ID:
-        case BCM88474H_DEVICE_ID:
-        case BCM88476_DEVICE_ID:
-        case BCM88477_DEVICE_ID:
-        case BCM88479_DEVICE_ID:
-        case BCM88270_DEVICE_ID:
-        case BCM88272_DEVICE_ID:
-        case BCM88273_DEVICE_ID:
-        case BCM88274_DEVICE_ID:
-        case BCM88278_DEVICE_ID:
-        case BCM88279_DEVICE_ID:
-        case BCM88950_DEVICE_ID:
-        case BCM88953_DEVICE_ID:
-        case BCM88954_DEVICE_ID:
-        case BCM88955_DEVICE_ID:
-        case BCM88956_DEVICE_ID:
-        case BCM88772_DEVICE_ID:
-        case BCM88952_DEVICE_ID:
-            ctrl->isr = _cmicd_interrupt;
-            break;
         case BCM56370_DEVICE_ID:
         case BCM56371_DEVICE_ID:
         case BCM56372_DEVICE_ID:
@@ -1380,9 +1319,6 @@ _devices_init(int d)
             } else {
                 ctrl->isr = _cmic_interrupt;
                 if ((ctrl->dev_type & BDE_256K_REG_SPACE) &&
-#ifdef BCM_PETRA_SUPPORT 
-                    ctrl->devid != 0x1234 &&
-#endif
                     readl(ctrl->ba + CMICE_DEV_REV_ID) == 0) {
                     ctrl->isr = _cmicm_interrupt;
                 }
@@ -1425,12 +1361,6 @@ _devices_init(int d)
 #endif
 #ifdef BCM_Q4D_SUPPORT
           case Q4D_DEVICE_ID:
-#endif
-#ifdef BCM_Q4DL_SUPPORT
-          case Q4DL_DEVICE_ID:
-#endif
-#ifdef BCM_J4L_SUPPORT
-          case J4L_DEVICE_ID:
 #endif
 #endif /* BCM_DNX3_SUPPORT */
 #ifdef BCM_DNXF3_SUPPORT
@@ -1949,6 +1879,9 @@ _ioctl(unsigned int cmd, unsigned long arg)
         io.d0 = _devices[io.dev].dev_type;
         break;
     case LUBDE_GET_BUS_FEATURES:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         user_bde->pci_bus_features(io.dev, (int *) &io.d0, (int *) &io.d1,
                                    (int *) &io.d2);
         break;
@@ -2038,15 +1971,15 @@ _ioctl(unsigned int cmd, unsigned long arg)
          * This is to handle the use case where userspace
          * application gets killed abruptly.
          */
-        if (atomic_read(&_devices[io.dev].enabled)) {
+        if (atomic_cmpxchg(&_devices[io.dev].enabled, 1, 0) == 1) {
             if (debug >= 1) {
                 gprintk("Interrupts already enabled, disable to cleanup\n");
             }
             user_bde->interrupt_disconnect(io.dev);
-            atomic_set(&_devices[io.dev].enabled, 0);
         }
         if (_devices[io.dev].dev_type & BDE_SWITCH_DEV_TYPE) {
-            if (_devices[io.dev].isr && !atomic_read(&_devices[io.dev].enabled)) {
+            if (_devices[io.dev].isr &&
+                atomic_cmpxchg(&_devices[io.dev].enabled, 0, 1) == 0) {
                 /* PCI/CMICX Devices */
                 if ((_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) &&
                     (_devices[io.dev].isr == _cmicx_interrupt) &&
@@ -2059,16 +1992,14 @@ _ioctl(unsigned int cmd, unsigned long arg)
                 user_bde->interrupt_connect(io.dev,
                                             _devices[io.dev].isr,
                                             _devices+io.dev);
-                atomic_set(&_devices[io.dev].enabled, 1);
             }
         } else {
             /* Process ethernet device interrupt */
 
-            if (!atomic_read(&_devices[io.dev].enabled)) {
+            if (atomic_cmpxchg(&_devices[io.dev].enabled, 0, 1) == 0) {
                 user_bde->interrupt_connect(io.dev,
                                             _ether_interrupt,
                                             _devices+io.dev);
-                atomic_set(&_devices[io.dev].enabled, 1);
             }
         }
         break;
@@ -2076,13 +2007,17 @@ _ioctl(unsigned int cmd, unsigned long arg)
         if (!VALID_DEVICE(io.dev)) {
             return -EINVAL;
         }
-        if (atomic_read(&_devices[io.dev].enabled)) {
+        if (atomic_cmpxchg(&_devices[io.dev].enabled, 1, 0) == 1) {
             user_bde->interrupt_disconnect(io.dev);
-            atomic_set(&_devices[io.dev].enabled, 0);
         }
         break;
     case LUBDE_SET_EDK_INTERRUPTS:
         if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
+        /* Clamp offsets so intc_intr_*_base + offset*4 stays in window */
+        if (io.d0 >= _devices[io.dev].intr_regs.intc_intr_nof_regs ||
+            io.d2 >= _devices[io.dev].intr_regs.intc_intr_nof_regs) {
             return -EINVAL;
         }
         res = &_bde_inst_resource[_devices[io.dev].inst];
@@ -2215,6 +2150,9 @@ _ioctl(unsigned int cmd, unsigned long arg)
     case LUBDE_SEM_OP:
         return -EINVAL;
     case LUBDE_WRITE_IRQ_MASK:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         /* CMICx device */
         if (_devices[io.dev].isr == _cmicx_interrupt) {
             io.rc = lkbde_irq_mask_set(io.dev + LKBDE_IPROC_REG, io.d0, io.d1, 0);
@@ -2237,44 +2175,33 @@ _ioctl(unsigned int cmd, unsigned long arg)
         }
         break;
     case LUBDE_SPI_READ_REG:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         if (user_bde->spi_read(io.dev, io.d0, io.dx.buf, io.d1) == -1) {
             io.rc = LUBDE_FAIL;
         }
         break;
     case LUBDE_SPI_WRITE_REG:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         if (user_bde->spi_write(io.dev, io.d0, io.dx.buf, io.d1) == -1) {
             io.rc = LUBDE_FAIL;
         }
         break;
     case LUBDE_READ_REG_16BIT_BUS:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         io.d1 = user_bde->read(io.dev, io.d0);
         break;
     case LUBDE_WRITE_REG_16BIT_BUS:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         io.rc = user_bde->write(io.dev, io.d0, io.d1);
         break;
-#ifdef BCM_SAND_SUPPORT
-    case LUBDE_CPU_WRITE_REG:
-    {
-        if (lkbde_cpu_write(io.dev, io.d0, (uint32*)io.dx.buf) == -1) {
-            io.rc = LUBDE_FAIL;
-        }
-        break;
-    }
-    case LUBDE_CPU_READ_REG:
-    {
-        if (lkbde_cpu_read(io.dev, io.d0, (uint32*)io.dx.buf) == -1) {
-            io.rc = LUBDE_FAIL;
-        }
-        break;
-    }
-    case LUBDE_CPU_PCI_REGISTER:
-    {
-        if (lkbde_cpu_pci_register(io.dev) == -1) {
-            io.rc = LUBDE_FAIL;
-        }
-        break;
-    }
-#endif
     case LUBDE_DEV_RESOURCE:
         if (!VALID_DEVICE(io.dev)) {
             return -EINVAL;
@@ -2328,6 +2255,9 @@ _ioctl(unsigned int cmd, unsigned long arg)
         io.rc = _device_reprobe();
         break;
     case LUBDE_GET_DEVICE_PCI_INFO:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         if (_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) {
             if (lkbde_get_dev_pci_info(io.dev, &io.d0, &io.d1, &io.d2) < 0)
                 io.rc = LUBDE_FAIL;
@@ -2336,14 +2266,23 @@ _ioctl(unsigned int cmd, unsigned long arg)
         }
         break;
     case LUBDE_BAR2_READ32:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         io.d1 = user_bde->read(io.dev, io.d0);
         break;
     case LUBDE_BAR2_WRITE32:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         if (user_bde->write(io.dev, io.d0, io.d1) == -1) {
             io.rc = LUBDE_FAIL;
         }
         break;
     case LUBDE_BAR2_READ64:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         {
             uint64_t data;
             data = user_bde->read64(io.dev, io.d0);
@@ -2352,6 +2291,9 @@ _ioctl(unsigned int cmd, unsigned long arg)
         }
         break;
     case LUBDE_BAR2_WRITE64:
+        if (!VALID_DEVICE(io.dev)) {
+            return -EINVAL;
+        }
         {
             uint64_t val;
             val = ((uint64_t)io.d2 << 32) |  (uint64_t)io.d1;

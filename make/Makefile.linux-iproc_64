@@ -87,7 +87,8 @@ endif
 ifeq ($(LOCALDIR),src/soc/phy/fcmap/src)
 OPT_CFLAGS += -Wno-address-of-packed-member
 endif
-
+# JIRA SONIC-69062
+CFGFLAGS += -Wp,-w
 CFGFLAGS += -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS
 CFGFLAGS += -DPHYS_ADDRS_ARE_64BITS
 CFLAGS += -fno-aggressive-loop-optimizations -fno-strict-overflow
@@ -128,12 +129,6 @@ name-fix = $(subst $(comma),_,$(subst -,_,$1))
 basename_flags = -D"KBUILD_BASENAME=KBUILD_STR($(call name-fix,$(basetarget)))"
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
                  -D"KBUILD_MODNAME=KBUILD_STR($(call name-fix,$(modname)))")
-
-KFLAG_INCLD ?= $(LD_LIBRARY_PATH)/gcc/$(TARGET_ARCHITECTURE)/$(CROSS_GCC_VER)/include
-
-ifeq (,$(KFLAGS))
-KFLAGS := -D__LINUX_ARM_ARCH__=8 -D__KERNEL__ -DPTRS_ARE_64BITS -DLONGS_ARE_64BITS -nostdinc -isystem $(KFLAG_INCLD) -I$(LINUX_INCLUDE) -include $(LINUX_INCLUDE)/generated/autoconf.h -I$(KERNDIR)/arch/arm64/include -I$(KERNDIR)/arch/arm64/include/generated -I$(KERNDIR)/arch/arm64/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/generated/asm -I$(KERNDIR)/include/uapi -I$(KERNDIR)/include/generated/uapi -I$(KERNDIR)/arch/arm64/include/uapi  -Wall -Wstrict-prototypes -Wno-trigraphs -O2 -fno-strict-aliasing -fno-common -fno-pic -pipe -ffreestanding -fomit-frame-pointer -g -fno-stack-protector -Wno-frame-address -Wno-address-of-packed-member -Wno-pointer-sign -mcmodel=large
-endif
 
 ifneq ($(targetplat),user)
 include ${SDK}/make/Makefile.linux-kernel-3_6

@@ -199,7 +199,7 @@ typedef struct kcom_netif_s {
  *
  */
 #define KCOM_FILTER_BYTES_MAX   256
-#define KCOM_FILTER_WORDS_MAX   BYTES2WORDS(KCOM_FILTER_BYTES_MAX)
+#define KCOM_FILTER_WORDS_MAX   ((KCOM_FILTER_BYTES_MAX + 3) / 4)
 
 #define KCOM_FILTER_T_RX_PKT    1
 
@@ -216,8 +216,8 @@ typedef struct kcom_netif_s {
 
 typedef struct kcom_filter_s {
     uint16 id;
-    uint8 type;
-    uint8 priority;
+    uint16 type;
+    uint32 priority;
     char desc[KCOM_FILTER_DESC_MAX];
     uint32 flags;
     uint32 cb_user_data;
@@ -364,27 +364,28 @@ typedef struct kcom_msg_version_s {
 /*
  * Request KCOM interface clock info.
  */
-#define KSYNC_M_HW_INIT                 0
-#define KSYNC_M_HW_DEINIT               1
-#define KSYNC_M_VERSION                 2
-#define KSYNC_M_HW_TS_DISABLE           3
-#define KSYNC_M_MTP_TS_UPDATE_ENABLE    4
-#define KSYNC_M_MTP_TS_UPDATE_DISABLE   5
-#define KSYNC_M_DNX_JR2DEVS_SYS_CONFIG  6
-#define KSYNC_M_BS_CONFIG_SET           7
-#define KSYNC_M_BS_CONFIG_CLEAR         8
-#define KSYNC_M_BS_STATUS               9
-#define KSYNC_M_PTP_TOD_OFFSET_SET      10
-#define KSYNC_M_PTP_TOD_OFFSET_GET      11
-#define KSYNC_M_NTP_TOD_OFFSET_SET      12
-#define KSYNC_M_NTP_TOD_OFFSET_GET      13
-#define KSYNC_M_PTP_TOD_GET             14
-#define KSYNC_M_NTP_TOD_GET             15
-#define KSYNC_M_GPIO_CONFIG_SET         16
-#define KSYNC_M_GPIO_CONFIG_GET         17
-#define KSYNC_M_LEAP_SEC_SET            18
-#define KSYNC_M_LEAP_SEC_GET            19
-#define KSYNC_M_BS_PHASE_OFFSET_SET     20
+#define KSYNC_M_HW_INIT                     0
+#define KSYNC_M_HW_DEINIT                   1
+#define KSYNC_M_VERSION                     2
+#define KSYNC_M_HW_TS_DISABLE               3
+#define KSYNC_M_MTP_TS_UPDATE_ENABLE        4
+#define KSYNC_M_MTP_TS_UPDATE_DISABLE       5
+#define KSYNC_M_DNX_JR2DEVS_SYS_CONFIG      6
+#define KSYNC_M_BS_CONFIG_SET               7
+#define KSYNC_M_BS_CONFIG_CLEAR             8
+#define KSYNC_M_BS_STATUS                   9
+#define KSYNC_M_PTP_TOD_OFFSET_SET          10
+#define KSYNC_M_PTP_TOD_OFFSET_GET          11
+#define KSYNC_M_NTP_TOD_OFFSET_SET          12
+#define KSYNC_M_NTP_TOD_OFFSET_GET          13
+#define KSYNC_M_PTP_TOD_GET                 14
+#define KSYNC_M_NTP_TOD_GET                 15
+#define KSYNC_M_GPIO_CONFIG_SET             16
+#define KSYNC_M_GPIO_CONFIG_GET             17
+#define KSYNC_M_LEAP_SEC_SET                18
+#define KSYNC_M_LEAP_SEC_GET                19
+#define KSYNC_M_BS_PHASE_OFFSET_SET         20
+#define KSYNC_M_GET_COMM_MEM_PADDR     21
 
 typedef struct kcom_clock_info_s {
     uint8 cmd;
@@ -614,6 +615,8 @@ typedef struct kcom_msg_hw_info_s {
     uint8 udh_enable;
     uint16 up_mep_ingress_cpu_trap_id1;
     uint16 up_mep_ingress_cpu_trap_id2;
+    uint16 up_mep_ingress_cpu_trap_id3;
+    uint16 up_mep_ingress_cpu_trap_id4;
     uint8 spa_mode;
 } kcom_msg_hw_info_t;
 

@@ -36,6 +36,7 @@
 #include <lkm.h>
 #include <gmodule.h>
 #include <linux/init.h>
+#include <linux/uaccess.h>
 /* Module Vector Table */
 static gmodule_t* _gmodule = NULL;
 
@@ -51,12 +52,13 @@ gvprintk(const char* fmt, va_list args)
 static int
 gvprintk(const char* fmt, va_list args)
 {
-    static char _buf[256];
+    char buf[256];
+    int len;
 
-    _buf[0] = 0;
-    sprintf(_buf, "%s (%d): ", _gmodule->name, current->pid);
-    vsprintf(_buf+strlen(_buf), fmt, args);
-    printk("%s",_buf);
+    snprintf(buf, sizeof(buf), "%s (%d): ", _gmodule->name, current->pid);
+    len = strlen(buf);
+    vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
+    printk("%s", buf);
 
     return 0;
 }
@@ -120,12 +122,17 @@ static ssize_t
 _gmodule_proc_write(struct file *file, const char *buffer,
                    size_t count, loff_t *loff)
 {
+    char kbuf[2];
+
     /* Workaround to toggle debugging */
     if(count > 2) {
-	if(buffer[0] == 'd') {
-	    _dbg_enable = buffer[1] - '0';
-	    GDBG("Debugging Enabled");
-	}
+        if (copy_from_user(kbuf, buffer, sizeof(kbuf))) {
+            return -EFAULT;
+        }
+        if(kbuf[0] == 'd') {
+            _dbg_enable = kbuf[1] - '0';
+            GDBG("Debugging Enabled");
+        }
     }
     return count;
 }
@@ -204,12 +211,17 @@ static int
 _gmodule_write_proc(struct file *file, const char *buffer,
 		    unsigned long count, void *data)
 {
+    char kbuf[2];
+
     /* Workaround to toggle debugging */
     if(count > 2) {
-	if(buffer[0] == 'd') {
-	    _dbg_enable = buffer[1] - '0';
-	    GDBG("Debugging Enabled");
-	}
+        if (copy_from_user(kbuf, buffer, sizeof(kbuf))) {
+            return -EFAULT;
+        }
+        if(kbuf[0] == 'd') {
+            _dbg_enable = kbuf[1] - '0';
+            GDBG("Debugging Enabled");
+        }
     }
     return count;
 }
@@ -221,13 +233,14 @@ _gmodule_create_proc(void)
     struct proc_dir_entry* ent;
 #if PROC_INTERFACE_KERN_VER_3_10
     if((ent = proc_create(_gmodule->name,
-                          S_IRUGO | S_IWUGO,
+                          S_IRUGO | S_IWUSR,
                           NULL,
                           &_gmodule_proc_fops)) != NULL) {
         return 0;
     }
 #else
-    if((ent = create_proc_entry(_gmodule->name, S_IRUGO | S_IWUGO, NULL)) != NULL) {
+    if((ent = create_proc_entry(_gmodule->name,
+                                S_IRUGO | S_IWUSR, NULL)) != NULL) {
         ent->read_proc = _gmodule_read_proc;
         ent->write_proc = _gmodule_write_proc;
         return 0;
@@ -317,8 +330,8 @@ struct file_operations _gmodule_fops = {
 };
 
 
-void __exit
-cleanup_module(void)
+static void __exit
+gmodule_exit(void)
 {
     if(!_gmodule) return;
 
@@ -336,8 +349,8 @@ cleanup_module(void)
     }
 }
 
-int __init
-init_module(void)
+static int __init
+gmodule_init(void)
 {  
     int rc;
 
@@ -376,3 +389,6 @@ init_module(void)
 
     return 0; /* succeed */
 }
+
+module_exit(gmodule_exit);
+module_init(gmodule_init);
