@@ -1,0 +1,73 @@
+# $Id: Makefile.linux-x86-smp_generic_64-2_6,v 1.5 Broadcom SDK $
+#
+# $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+# 
+# Permission is granted to use, copy, modify and/or distribute this
+# software under either one of the licenses below.
+# 
+# License Option 1: GPL
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2, as
+# published by the Free Software Foundation (the "GPL").
+# 
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License version 2 (GPLv2) for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# version 2 (GPLv2) along with this source code.
+# 
+# 
+# License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
+# 
+# This software is governed by the Broadcom Open Network Switch APIs license:
+# https://www.broadcom.com/products/ethernet-connectivity/software/opennsa $
+# 
+# 
+
+CFGFLAGS += -DLONGS_ARE_64BITS
+CFGFLAGS += -DPTRS_ARE_64BITS
+CFGFLAGS += -DPHYS_ADDRS_ARE_64BITS
+CFGFLAGS += -DSAL_SPL_LOCK_ON_IRQ
+
+ifneq ($(ESW_CHIPS)$(LTSW_CHIPS),)
+# Glibc 2.27 or later version doesn't support SVID libm error handling.
+# Building tcl 8.3.3 with the new toolchain will occur errors.
+export TCL840  := 1
+endif
+
+include ${SDK}/make/Makefile.linux-x86-generic-common-2_6
+
+GCC_MAJOR_VER  = $(shell GCCVER=$(GCCVER) $(CC) -dumpversion | cut -d'.' -f1)
+
+ifeq (${GCC_MAJOR_VER}, 11)
+CFGFLAGS += -Wno-error=sizeof-array-div
+CFGFLAGS += -Wno-error=stringop-overread
+endif
+ifneq (1,$(USE_CLANG))
+CFGFLAGS += -Wno-error=stringop-truncation
+CFGFLAGS += -Wno-error=maybe-uninitialized
+CFGFLAGS += -Wno-error=format-overflow
+CFGFLAGS += -Wno-error=array-bounds
+endif
+
+ifdef LTSW_CHIPS
+# Hardware interface (see $SDKLT/bcma/sys/probe directory)
+SYSTEM_INTERFACE ?= ngbde
+
+# Turn on direct register access if running on real hardware.
+ifeq (ngbde,$(SYSTEM_INTERFACE))
+ifeq (,$(EXTRA_SYSTEM_INTERFACES))
+LTSW_ADD_CPPFLAGS += -DBCMDRD_CONFIG_MEMMAP_DIRECT=1
+endif
+endif
+
+export SYSTEM_INTERFACE
+endif
+
+# Default open source target build
+OPENSRC_BUILD ?= x86_64
+
+include ${SDK}/make/Makefile.linux-x86-common-2_6
