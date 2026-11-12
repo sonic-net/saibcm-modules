@@ -339,7 +339,7 @@ clean::
 	$(MAKE) -C $(SDK)/systems/bde/linux/kernel $@
 	$(MAKE) -C $(SDK)/systems/bde/linux/user/kernel $@
 	$(MAKE) -C $(SDK)/systems/linux/kernel/modules \
-		subdirs="shared $(knet_subdirs)" \
+		subdirs="$(knet_subdirs)" \
 		override-target=linux-$(platform) $@
 	$(RM) $(KERNEL_BDE) $(USER_BDE)
 	$(RM) $(BCM_KNET) $(KNET_CB) $(GENL_PACKET) $(BCM_GENL)
