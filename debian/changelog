@@ -1,3 +1,11 @@
+opennsl (15.2.1.0.0.0.50.1) unstable; urgency=medium
+
+  * Update to Broadcom SAI 15.2.1.0.0.0.50.1
+  * Sync sdklt/linux/st/ngst_main.c with the HSDK 6.5.35 GPL sources
+    shipped with this SAI
+
+ -- Aaron Bernardino <aaronber@microsoft.com>  Tue, 17 Nov 2026 22:17:38 +0000
+
 opennsl (15.2.0.0.0.0.0.0) unstable; urgency=medium
 
   * Update to Broadcom SAI 15.2.0.0.0.0.0.0
