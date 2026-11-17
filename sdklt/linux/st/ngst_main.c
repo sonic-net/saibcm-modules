@@ -90,7 +90,7 @@ static struct genl_family ngst_genl_family = {
 static inline void
 ngst_nl_msg_send(int cmd, const char *payload, uint32_t payload_size)
 {
-    void *gnlh;
+    void *gnlh, *data;
     struct sk_buff *skb_out;
 
     skb_out = genlmsg_new(payload_size, GFP_KERNEL);
@@ -99,7 +99,10 @@ ngst_nl_msg_send(int cmd, const char *payload, uint32_t payload_size)
         return;
     }
     gnlh = genlmsg_put(skb_out, 0, 0, &ngst_genl_family, 0, cmd);
-    memcpy(gnlh, payload, payload_size);
+    data = skb_put(skb_out, payload_size);
+    memcpy(data, payload, payload_size);
+
+    genlmsg_end(skb_out, gnlh);
 
     genlmsg_multicast(&ngst_genl_family, skb_out, 0, 0, GFP_KERNEL);
     return;
@@ -119,9 +122,16 @@ ngst_send_msgs_to_user(void *data)
         stdev.buff_wr_ptr = *((uint32_t *)(stdev.dma_vaddr));
 
         if (stdev.buff_wr_ptr != stdev.buff_rd_ptr) {
+            uint32_t payload_len;
             cur_dma_vaddr = stdev.dma_buff_addr_va +
                             (stdev.buff_rd_ptr * stdev.buff_chunk_size);
-            ngst_nl_msg_send(NGST_CMD_DATA_RSP, cur_dma_vaddr, stdev.buff_chunk_size);
+            /* Length table sits right after the write pointer. */
+            payload_len = *((uint32_t *)(stdev.dma_vaddr + sizeof(uint32_t) +
+                            stdev.buff_rd_ptr * sizeof(uint32_t)));
+            if (payload_len > stdev.buff_chunk_size) {
+                payload_len = stdev.buff_chunk_size;
+            }
+            ngst_nl_msg_send(NGST_CMD_DATA_RSP, cur_dma_vaddr, payload_len);
             if (++stdev.buff_rd_ptr == stdev.buff_chunk_cnt) {
                 stdev.buff_rd_ptr = 0;
             }
@@ -173,8 +183,9 @@ ngst_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             if (!stdev.dma_vaddr) {
                 stdev.buff_wr_ptr = 0;
                 stdev.buff_rd_ptr = 0;
-                /* Including write pointer size */
-                stdev.dma_size = ioc.size + sizeof(uint32_t);
+                /* Including write pointer + per-chunk length table */
+                stdev.dma_size = ioc.size + sizeof(uint32_t) +
+                                 (ioc.chunk_cnt * sizeof(uint32_t));
                 stdev.dma_vaddr = dma_alloc_coherent(stdev.dma_dev,
                                                       stdev.dma_size,
                                                       &stdev.dma_handle,
@@ -186,11 +197,11 @@ ngst_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     printk(KERN_INFO "DMA buffer allocated successfully\n");
                 }
                 memset(stdev.dma_vaddr, 0, stdev.dma_size);
-                stdev.dma_buff_addr_va = stdev.dma_vaddr + sizeof(uint32_t);
+                stdev.dma_buff_addr_va = stdev.dma_vaddr + sizeof(uint32_t) +
+                                         (ioc.chunk_cnt * sizeof(uint32_t));
 
                 stdev.buff_chunk_cnt = ioc.chunk_cnt;
                 stdev.buff_chunk_size = ioc.size / ioc.chunk_cnt;
-                ngst_genl_family.hdrsize = stdev.buff_chunk_size;
             } else {
                 if ((stdev.buff_chunk_cnt != ioc.chunk_cnt) ||
                     (stdev.buff_chunk_size != ioc.size / ioc.chunk_cnt)) {
