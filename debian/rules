@@ -148,6 +148,8 @@ install: build
 	dh_prep
 	dh_installdirs
 	dh_install
+	dh_install sdklt/build/edk/linux_ngedk.ko lib/modules/$(KVER_ARCH)/extra
+	dh_install sdklt/build/st/linux_ngst.ko lib/modules/$(KVER_ARCH)/extra
 
 # Build architecture-independent files here.
 # Pass -i to all debhelper commands in this target to reduce clutter.
