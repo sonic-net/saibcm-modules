@@ -60,6 +60,7 @@ function load_kernel_modules()
         modprobe linux-kernel-bde dmasize=$dmasize maxpayload=128 debug=4 dma_debug=1 usemsi=$usemsi
         modprobe linux-user-bde
         modprobe psample
+        modprobe linux-bcm-genl
 
         modprobe linux-bcm-knet use_rx_skb=1 rx_buffer_size=9238 debug=0x5020 default_mtu=9100 use_napi=$use_napi
         modprobe linux-knet-cb
@@ -79,6 +80,7 @@ function remove_kernel_modules()
         rmmod psample
     else
         rmmod psample
+        rmmod linux-bcm-genl
         rmmod linux-knet-cb
         rmmod linux-bcm-knet
         rmmod linux-user-bde
