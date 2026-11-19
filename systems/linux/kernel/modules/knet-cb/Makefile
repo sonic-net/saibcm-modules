@@ -28,99 +28,78 @@
 # 
 # 
 #
+# BCM Network Device Callback Example
+#
 LOCALDIR = systems/linux/kernel/modules/knet-cb
 
 include ${SDK}/make/Make.config
-
-LIBS = $(LIBDIR)/libkern.a
 
 ifeq (1,$(BUILD_DCBLIB))
 ifndef DCBDIR
 $(error 'The $$DCBDIR variable is not set')
 endif
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-$(error 'DCB_LIB build is not supported if NO_PRECOMPILED_MODULE=1')
+LKM_CPPFLAGS := -DDCBLIB_SUPPORT -I$(DCBDIR)/include
+DCB_VSRCS := $(shell find $(DCBDIR) -name test -prune -o -name \*.c -print)
+DCB_LSRCS := $(notdir $(DCB_VSRCS))
+DCB_OBJS := $(DCB_LSRCS:.c=.o)
 endif
-LIBS += $(LIBDIR)/libdcb.a
-CFLAGS += -DDCBLIB_SUPPORT -I$(DCBDIR)/include
+
+ifeq (1,$(BUILD_PSAMPLE))
+LKM_CPPFLAGS += -DPSAMPLE_SUPPORT
+PSAMPLE_OBJS := psample-cb.o
 endif
 
-KERNEL_MODULE_DIR = kernel_module
+export LKM_CPPFLAGS
 
-THIS_MOD_NAME := linux-knet-cb
-MODULE = $(LIBDIR)/$(THIS_MOD_NAME).o
-KMODULE = $(LIBDIR)/$(THIS_MOD_NAME).ko
+export MOD_NAME := linux-knet-cb
 
-# BCM Network Device
+export MOD_OBJS := \
+	knet-cb.o \
+	$(DCB_OBJS) \
+	$(PSAMPLE_OBJS) \
+	gmodule.o
 
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
-KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../bcm-knet/Module.symvers
-export KBUILD_EXTRA_SYMBOLS
-#
-# These are the objects which need to be compiled, in the kernel, to
-# created the module object file.
-#
-SRCS_COMPOSING = knet-cb.c ../shared/gmodule.c
-OBJECTS_COMPOSING = "knet-cb.o gmodule.o"
+KMODULE = $(LIBDIR)/$(MOD_NAME).ko
 
 build: $(KMODULE)
+
 #
-# Note that for NO_PRECOMPILED_MODULE, the subdirectory  'systems/linux/kernel/modules/knet-cb/kernel_module'
-# is not created and all action is done in systems/linux/kernel/modules/knet-cb
+# KBUILD_EXTRA_SYMBOLS exports the symbols created on the first module
+# compilation to all other module compilations.
 #
-$(KMODULE): $(SRCS_COMPOSING)
+KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../bcm-knet/Module.symvers
+
+#
+# Suppress symlink error messages.
+#
+# Note that we do not use "ln -f" as this may cause failures if
+# multiple builds are done in parallel on the same source tree.
+#
+R = 2>/dev/null
+
+mklinks:
 	mkdir -p $(BLDDIR)
-	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
 	rm -f $(BLDDIR)/*.c
-	rm -f $(BLDDIR)/*.o
-	rm -f $(BLDDIR)/*.ko
-	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/Makefile
-	cp ./*.c $(BLDDIR)/
-	cp ../shared/*.c $(BLDDIR)/
-	#
-	# Wait until bcm-knet compilation is over so that we can copy its resultant
-	# Module.symvers
-	#
-	if [ ! -f ${KBUILD_EXTRA_SYMBOLS} ]; then sleep 5; fi
-	cat ${KBUILD_EXTRA_SYMBOLS} > $(BLDDIR)/Module.symvers
-	MOD_OBJS=$(OBJECTS_COMPOSING) MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR) $(THIS_MOD_NAME).ko LOC_BLDDIR=$(BLDDIR) LOC_SRCDIR=$(PWD)
-# }
-else
-# {
-KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../bcm-knet/kernel_module/Module.symvers
-export KBUILD_EXTRA_SYMBOLS
-
-build: $(MODULE) $(KMODULE)
-#
-# This is for the compilation of the 'precompiled' object. We keep it
-# here for compatibility.
-#
-$(LIBDIR)/libdcb.a:
-	$(MAKE) -C $(DCBDIR)/make BLDDIR=$(LIBDIR) \
-		KADD_CFLAGS="-I${SDK}/systems/linux/kernel/modules/include $(KFLAGS) -D$(ENDIAN)" \
-		CROSS_COMPILE=$(CROSS_COMPILE)
-
-$(MODULE): $(BLDDIR)/.tree $(BOBJS) $(LIBS)
-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
-
-$(KMODULE): $(MODULE)
-	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	mkdir $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/$(KERNEL_MODULE_DIR)/Makefile
-	cat ${KBUILD_EXTRA_SYMBOLS} > $(BLDDIR)/$(KERNEL_MODULE_DIR)/Module.symvers
-	MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR)/$(KERNEL_MODULE_DIR) $(THIS_MOD_NAME).ko
-
-# Make.depend is before clean:: so that Make.depend's clean:: runs first.
-include ${SDK}/make/Make.depend
-# }
+	rm -f $(BLDDIR)/*.h
+	rm -f $(BLDDIR)/Makefile
+	-ln -sr ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/Makefile $(R)
+	-ln -sr knet-cb.c $(BLDDIR) $(R)
+ifeq (1,$(BUILD_DCBLIB))
+	-for f in $(DCB_VSRCS); do ln -sr $$f $(BLDDIR) $(R); done
 endif
+ifeq (1,$(BUILD_PSAMPLE))
+	-ln -sr psample-cb.c $(BLDDIR) $(R)
+	-ln -sr psample-cb.h $(BLDDIR) $(R)
+endif
+	-ln -sr ../../../../linux/kernel/modules/shared/gmodule.c $(BLDDIR) $(R)
+
+$(KMODULE): mklinks
+	$(MAKE) -C $(BLDDIR) KBUILD_EXTRA_SYMBOLS="$(KBUILD_EXTRA_SYMBOLS)"
 
 clean::
-	$(RM) $(BLDDIR)/version.c $(BLDDIR)/version.o
-	$(RM) $(BOBJS) $(MODULE)
-ifeq (1,$(BUILD_DCBLIB))
-	$(MAKE) -C $(DCBDIR)/make BLDDIR=$(LIBDIR) clean
-endif
+	rm -f $(KMODULE)
+	rm -rf $(BLDDIR)
 
-.PHONY: build
+distclean::
+
+.PHONY: build mklinks $(KMODULE)

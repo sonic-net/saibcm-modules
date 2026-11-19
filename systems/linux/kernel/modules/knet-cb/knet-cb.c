@@ -261,18 +261,18 @@ strip_tag_rx_cb(struct sk_buff *skb, int dev_no, void *meta)
             uint32 *meta_buffer = (uint32 *)meta;
             uint32 forward_domain = meta_buffer[1] & 0xffff;
             add_vlan_tag(skb, forward_domain);
-    }
+        }
         strip_stats.skipped++;
-    return skb;
-}
+        return skb;
+    }
 
     /* SAI strip implies always strip. If the packet is untagged or
        inner taged, SDK adds a .1q tag, so we need to strip tag
        anyway */
     if (filter_flags == FILTER_TAG_STRIP)
-{
+    {
         strip_tag = 1;
-        }
+    }
 
 
 
@@ -285,8 +285,8 @@ strip_tag_rx_cb(struct sk_buff *skb, int dev_no, void *meta)
 #endif
     if (tag_status < 0) {
         /* Unsupported DCB type */
-    return skb;
-}
+        return skb;
+    }
 
     if (filter_flags == FILTER_TAG_ORIGINAL)
     {

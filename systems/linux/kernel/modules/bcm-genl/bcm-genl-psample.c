@@ -76,6 +76,9 @@ static int debug;
 
 #define PSAMPLE_RATE_DFLT 1
 #define PSAMPLE_SIZE_DFLT 128
+#define PSAMPLE_EGR_RATE_DFLT 0
+#define PSAMPLE_EGR_SIZE_DFLT 0
+
 static int psample_size = PSAMPLE_SIZE_DFLT;
 LKM_MOD_PARAM(psample_size, "i", int, 0);
 MODULE_PARM_DESC(psample_size,
@@ -125,6 +128,7 @@ typedef struct psample_info_s {
     uint64_t rx_reason_sample_source_mask[LINUX_BDE_MAX_DEVICES];
     uint64_t rx_reason_sample_dest[LINUX_BDE_MAX_DEVICES];
     uint64_t rx_reason_sample_dest_mask[LINUX_BDE_MAX_DEVICES];
+    uint64_t rx_reason_sample_only_mask[LINUX_BDE_MAX_DEVICES];
 } psample_info_t;
 static psample_info_t g_psample_info;
 
@@ -287,7 +291,7 @@ psample_meta_dstport_get(int dev_no, void *pkt_meta, bool *is_mcast)
 }
 
 static int
-psample_meta_sample_type_get(int dev_no, void *pkt_meta)
+psample_meta_sample_type_get(int dev_no, void *pkt_meta, int *sflow_only)
 {
     uint64_t rx_reason;
     static bool rx_reason_set[LINUX_BDE_MAX_DEVICES];
@@ -295,6 +299,7 @@ psample_meta_sample_type_get(int dev_no, void *pkt_meta)
     uint64_t *smpls_mask = &g_psample_info.rx_reason_sample_source_mask[dev_no];
     uint64_t *smpld = &g_psample_info.rx_reason_sample_dest[dev_no];
     uint64_t *smpld_mask = &g_psample_info.rx_reason_sample_dest_mask[dev_no];
+    uint64_t *smplo_mask = &g_psample_info.rx_reason_sample_only_mask[dev_no];
 
     if (bcmgenl_dev_pktmeta_rx_reason_get(dev_no, pkt_meta, &rx_reason) < 0) {
         return SAMPLE_TYPE_NONE;
@@ -303,7 +308,12 @@ psample_meta_sample_type_get(int dev_no, void *pkt_meta)
     if (!rx_reason_set[dev_no]) {
         bcmgenl_dev_rx_reason_sample_source_get(dev_no, smpls, smpls_mask);
         bcmgenl_dev_rx_reason_sample_dest_get(dev_no, smpld, smpld_mask);
+        *smplo_mask = ~(*smpls_mask | *smpld_mask);
         rx_reason_set[dev_no] = true;
+    }
+
+    if (rx_reason && (rx_reason & *smplo_mask) == 0) {
+        *sflow_only = 1;
     }
 
     if (*smpls && (rx_reason & *smpls_mask) == *smpls) {
@@ -312,6 +322,62 @@ psample_meta_sample_type_get(int dev_no, void *pkt_meta)
         return SAMPLE_TYPE_EGRESS;
     }
     return SAMPLE_TYPE_NONE;
+}
+
+static void
+psample_config_get(bcmgenl_netif_t *bcmgenl_netif, bool egress_netif,
+                   int rx_sample_type, int *rate, int *size)
+{
+    int match_type, mismatch_type;
+
+    /*
+     * Use egr_sample_size to disable/enable the support of separate
+     * configuration sets for ingress and egress sampling.
+     */
+    if (bcmgenl_netif->egr_sample_size == 0) {
+        /*
+         * Use single configuration set.
+         * Sampling rate and size are from ingress network interface
+         * regardless of the sampling type.
+         */
+        if (!egress_netif) {
+            *rate = bcmgenl_netif->sample_rate;
+            *size = bcmgenl_netif->sample_size;
+        }
+        return;
+    }
+
+    /*
+     * Use separate configuration sets for ingress and egress sampling.
+     */
+    mismatch_type = egress_netif ? SAMPLE_TYPE_INGRESS : SAMPLE_TYPE_EGRESS;
+    if (rx_sample_type == mismatch_type) {
+        return;
+    }
+    match_type = egress_netif ? SAMPLE_TYPE_EGRESS : SAMPLE_TYPE_INGRESS;
+    if (rx_sample_type == match_type) {
+        if (egress_netif) {
+            *rate = bcmgenl_netif->egr_sample_rate;
+            *size = bcmgenl_netif->egr_sample_size;
+        } else {
+            *rate = bcmgenl_netif->sample_rate;
+            *size = bcmgenl_netif->sample_size;
+        }
+    } else if (*rate == PSAMPLE_RATE_DFLT && *size == PSAMPLE_SIZE_DFLT) {
+        if (egress_netif) {
+            if (bcmgenl_netif->egr_sample_rate != PSAMPLE_EGR_RATE_DFLT ||
+                bcmgenl_netif->egr_sample_size != PSAMPLE_EGR_SIZE_DFLT) {
+                *rate = bcmgenl_netif->egr_sample_rate;
+                *size = bcmgenl_netif->egr_sample_size;
+            }
+        } else {
+            if (bcmgenl_netif->sample_rate != PSAMPLE_RATE_DFLT ||
+                bcmgenl_netif->sample_size != PSAMPLE_SIZE_DFLT) {
+                *rate = bcmgenl_netif->sample_rate;
+                *size = bcmgenl_netif->sample_size;
+            }
+        }
+    }
 }
 
 static int
@@ -323,9 +389,10 @@ psample_meta_get(int dev_no, kcom_filter_t *kf, void *pkt_meta,
     int src_ifindex = 0;
     int dst_ifindex = 0;
     int sample_type;
-    int sample_rate = 1;
+    int sample_rate = PSAMPLE_RATE_DFLT;
     int sample_size = PSAMPLE_SIZE_DFLT;
     bcmgenl_netif_t bcmgenl_netif;
+    int sflow_only = 0;
 
 #ifdef PSAMPLE_CB_DBG
     if (debug & 0x1) {
@@ -348,14 +415,14 @@ psample_meta_get(int dev_no, kcom_filter_t *kf, void *pkt_meta,
         return -1;
     }
 
-    sample_type = psample_meta_sample_type_get(dev_no, pkt_meta);
+    sample_type = psample_meta_sample_type_get(dev_no, pkt_meta, &sflow_only);
 
     /* find src port netif (no need to lookup CPU port) */
     if (srcport != 0) {
         if (bcmgenl_netif_get_by_port(srcport, &bcmgenl_netif) == 0) {
             src_ifindex = bcmgenl_netif.dev->ifindex;
-            sample_rate = bcmgenl_netif.sample_rate;
-            sample_size = bcmgenl_netif.sample_size;
+            psample_config_get(&bcmgenl_netif, false, sample_type,
+                               &sample_rate, &sample_size);
         } else {
             g_psample_stats.pkts_d_meta_srcport++;
             PSAMPLE_CB_DBG_PRINT("%s: could not find srcport(%d)\n", __func__, srcport);
@@ -375,7 +442,9 @@ psample_meta_get(int dev_no, kcom_filter_t *kf, void *pkt_meta,
     if (dstport != 0 &&
         bcmgenl_netif_get_by_port(dstport, &bcmgenl_netif) == 0) {
         dst_ifindex = bcmgenl_netif.dev->ifindex;
-    } else if (sample_type != SAMPLE_TYPE_NONE) {
+        psample_config_get(&bcmgenl_netif, true, sample_type,
+                           &sample_rate, &sample_size);
+    } else if (sample_type != SAMPLE_TYPE_NONE && sflow_only) {
         dst_ifindex = 0xffff;
         g_psample_stats.pkts_d_psample_only++;
     } else if (dstport == 0) {
@@ -604,7 +673,7 @@ psample_proc_rate_show(struct seq_file *m, void *v)
 }
 
 static int
-psample_proc_rate_open(struct inode * inode, struct file * file)
+psample_proc_rate_open(struct inode *inode, struct file *file)
 {
     return single_open(file, psample_proc_rate_show, NULL);
 }
@@ -635,15 +704,17 @@ psample_proc_rate_write(struct file *file, const char *buf,
 {
     int netif_cnt;
     char sample_str[40], *ptr, *newline;
+    size_t len;
 
-    if (count > sizeof(sample_str)) {
-        count = sizeof(sample_str) - 1;
-        sample_str[count] = '\0';
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
     }
-    if (copy_from_user(sample_str, buf, count)) {
+
+    len = (count >= sizeof(sample_str)) ? sizeof(sample_str) - 1 : count;
+    if (copy_from_user(sample_str, buf, len)) {
         return -EFAULT;
     }
-    sample_str[count] = 0;
+    sample_str[len] = '\0';
     newline = strchr(sample_str, '\n');
     if (newline) {
         /* Chop off the trailing newline */
@@ -652,13 +723,15 @@ psample_proc_rate_write(struct file *file, const char *buf,
 
     if ((ptr = strchr(sample_str, '=')) == NULL &&
         (ptr = strchr(sample_str, ':')) == NULL) {
-        gprintk("Error: Pkt sample rate syntax not recognized: '%s'\n", sample_str);
+        gprintk("Error: Pkt sample rate syntax not recognized: '%s'\n",
+                sample_str);
         return count;
     }
     *ptr++ = 0;
 
     netif_cnt = bcmgenl_netif_search(sample_str, proc_rate_write,
-                                     (void *)(uintptr_t)simple_strtol(ptr, NULL, 10));
+                                     (void *)(uintptr_t)simple_strtol(ptr, NULL,
+                                                                      10));
     if (netif_cnt <= 0) {
         gprintk("Warning: Failed setting psample rate on "
                 "unknown network interface: '%s'\n", sample_str);
@@ -696,7 +769,7 @@ psample_proc_size_show(struct seq_file *m, void *v)
 }
 
 static int
-psample_proc_size_open(struct inode * inode, struct file * file)
+psample_proc_size_open(struct inode *inode, struct file *file)
 {
     return single_open(file, psample_proc_size_show, NULL);
 }
@@ -723,19 +796,21 @@ proc_size_write(void *cb_data, bcmgenl_netif_t *netif)
 
 static ssize_t
 psample_proc_size_write(struct file *file, const char *buf,
-                    size_t count, loff_t *loff)
+                        size_t count, loff_t *loff)
 {
     int netif_cnt;
     char sample_str[40], *ptr, *newline;
+    size_t len;
 
-    if (count > sizeof(sample_str)) {
-        count = sizeof(sample_str) - 1;
-        sample_str[count] = '\0';
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
     }
-    if (copy_from_user(sample_str, buf, count)) {
+
+    len = (count >= sizeof(sample_str)) ? sizeof(sample_str) - 1 : count;
+    if (copy_from_user(sample_str, buf, len)) {
         return -EFAULT;
     }
-    sample_str[count] = 0;
+    sample_str[len] = '\0';
     newline = strchr(sample_str, '\n');
     if (newline) {
         /* Chop off the trailing newline */
@@ -744,13 +819,15 @@ psample_proc_size_write(struct file *file, const char *buf,
 
     if ((ptr = strchr(sample_str, '=')) == NULL &&
         (ptr = strchr(sample_str, ':')) == NULL) {
-        gprintk("Error: Pkt sample size syntax not recognized: '%s'\n", sample_str);
+        gprintk("Error: Pkt sample size syntax not recognized: '%s'\n",
+                sample_str);
         return count;
     }
     *ptr++ = 0;
 
     netif_cnt = bcmgenl_netif_search(sample_str, proc_size_write,
-                                     (void *)(uintptr_t)simple_strtol(ptr, NULL, 10));
+                                     (void *)(uintptr_t)simple_strtol(ptr, NULL,
+                                                                      10));
     if (netif_cnt <= 0) {
         gprintk("Warning: Failed setting psample size on "
                 "unknown network interface: '%s'\n", sample_str);
@@ -769,6 +846,199 @@ struct proc_ops psample_proc_size_file_ops = {
 };
 
 /*
+ * psample egr_rate Proc Read Entry
+ */
+static int
+proc_egr_rate_show(void *cb_data, bcmgenl_netif_t *netif)
+{
+    struct seq_file *m = (struct seq_file *)cb_data;
+
+    seq_printf(m, "  %-14s %d\n",
+               netif->dev->name, netif->egr_sample_rate);
+    return 0;
+}
+
+static int
+psample_proc_egr_rate_show(struct seq_file *m, void *v)
+{
+    bcmgenl_netif_search(NULL, proc_egr_rate_show, (void *)m);
+    return 0;
+}
+
+static int
+psample_proc_egr_rate_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, psample_proc_egr_rate_show, NULL);
+}
+
+/*
+ * psample egr_rate Proc Write Entry
+ *
+ *   Syntax:
+ *   <netif>=<pkt sample rate>
+ *
+ *   Where <netif> is a virtual network interface name.
+ *
+ *   Examples:
+ *   eth4=1000
+ */
+static int
+proc_egr_rate_write(void *cb_data, bcmgenl_netif_t *netif)
+{
+    uint32 sample_rate = (uint32)(uintptr_t)cb_data;
+
+    netif->egr_sample_rate = sample_rate;
+    return 0;
+}
+
+static ssize_t
+psample_proc_egr_rate_write(struct file *file, const char *buf,
+                            size_t count, loff_t *loff)
+{
+    int netif_cnt;
+    char sample_str[40], *ptr, *newline;
+    size_t len;
+
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
+    }
+
+    len = (count >= sizeof(sample_str)) ? sizeof(sample_str) - 1 : count;
+    if (copy_from_user(sample_str, buf, len)) {
+        return -EFAULT;
+    }
+    sample_str[len] = '\0';
+    newline = strchr(sample_str, '\n');
+    if (newline) {
+        /* Chop off the trailing newline */
+        *newline = '\0';
+    }
+
+    if ((ptr = strchr(sample_str, '=')) == NULL &&
+        (ptr = strchr(sample_str, ':')) == NULL) {
+        gprintk("Error: Pkt sample egr_rate syntax not recognized: '%s'\n",
+                sample_str);
+        return count;
+    }
+    *ptr++ = 0;
+
+    netif_cnt = bcmgenl_netif_search(sample_str, proc_egr_rate_write,
+                                     (void *)(uintptr_t)simple_strtol(ptr, NULL,
+                                                                      10));
+    if (netif_cnt <= 0) {
+        gprintk("Warning: Failed setting psample egr_rate on "
+                "unknown network interface: '%s'\n", sample_str);
+    }
+
+    return count;
+}
+
+struct proc_ops psample_proc_egr_rate_file_ops = {
+    PROC_OWNER(THIS_MODULE)
+    .proc_open =      psample_proc_egr_rate_open,
+    .proc_read =      seq_read,
+    .proc_lseek =     seq_lseek,
+    .proc_write =     psample_proc_egr_rate_write,
+    .proc_release =   single_release,
+};
+
+/*
+ * psample egr_size Proc Read Entry
+ */
+static int
+proc_egr_size_show(void *cb_data, bcmgenl_netif_t *netif)
+{
+    struct seq_file *m = (struct seq_file *)cb_data;
+
+    seq_printf(m, "  %-14s %d\n", netif->dev->name, netif->egr_sample_size);
+    return 0;
+}
+
+static int
+psample_proc_egr_size_show(struct seq_file *m, void *v)
+{
+    bcmgenl_netif_search(NULL, proc_egr_size_show, (void *)m);
+    return 0;
+}
+
+static int
+psample_proc_egr_size_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, psample_proc_egr_size_show, NULL);
+}
+
+/*
+ * psample egr_size Proc Write Entry
+ *
+ *   Syntax:
+ *   <netif>=<pkt sample size in bytes>
+ *
+ *   Where <netif> is a virtual network interface name.
+ *
+ *   Examples:
+ *   eth4=128
+ */
+static int
+proc_egr_size_write(void *cb_data, bcmgenl_netif_t *netif)
+{
+    uint32 sample_size = (uint32)(uintptr_t)cb_data;
+
+    netif->egr_sample_size = sample_size;
+    return 0;
+}
+
+static ssize_t
+psample_proc_egr_size_write(struct file *file, const char *buf,
+                            size_t count, loff_t *loff)
+{
+    int netif_cnt;
+    char sample_str[40], *ptr, *newline;
+    size_t len;
+
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
+    }
+
+    len = (count >= sizeof(sample_str)) ? sizeof(sample_str) - 1 : count;
+    if (copy_from_user(sample_str, buf, len)) {
+        return -EFAULT;
+    }
+    sample_str[len] = '\0';
+    newline = strchr(sample_str, '\n');
+    if (newline) {
+        /* Chop off the trailing newline */
+        *newline = '\0';
+    }
+
+    if ((ptr = strchr(sample_str, '=')) == NULL &&
+        (ptr = strchr(sample_str, ':')) == NULL) {
+        gprintk("Error: Pkt sample egr_size syntax not recognized: '%s'\n",
+                sample_str);
+        return count;
+    }
+    *ptr++ = 0;
+
+    netif_cnt = bcmgenl_netif_search(sample_str, proc_egr_size_write,
+                                     (void *)(uintptr_t)simple_strtol(ptr, NULL,
+                                                                      10));
+    if (netif_cnt <= 0) {
+        gprintk("Warning: Failed setting psample egr_size on "
+                "unknown network interface: '%s'\n", sample_str);
+    }
+
+    return count;
+}
+
+struct proc_ops psample_proc_egr_size_file_ops = {
+    PROC_OWNER(THIS_MODULE)
+    .proc_open =      psample_proc_egr_size_open,
+    .proc_read =      seq_read,
+    .proc_lseek =     seq_lseek,
+    .proc_write =     psample_proc_egr_size_write,
+    .proc_release =   single_release,
+};
+
+/*
  * psample debug Proc Read Entry
  */
 static int
@@ -783,7 +1053,7 @@ psample_proc_debug_show(struct seq_file *m, void *v)
 }
 
 static int
-psample_proc_debug_open(struct inode * inode, struct file * file)
+psample_proc_debug_open(struct inode *inode, struct file *file)
 {
     return single_open(file, psample_proc_debug_show, NULL);
 }
@@ -803,16 +1073,19 @@ static ssize_t
 psample_proc_debug_write(struct file *file, const char *buf,
                          size_t count, loff_t *loff)
 {
-    char debug_str[40] = {0};
+    char debug_str[40];
     char *ptr;
+    size_t len;
 
-    if (count >= sizeof(debug_str)) {
-        count = sizeof(debug_str) - 1;
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
     }
-    if (copy_from_user(debug_str, buf, count)) {
+
+    len = (count >= sizeof(debug_str)) ? sizeof(debug_str) - 1 : count;
+    if (copy_from_user(debug_str, buf, len)) {
         return -EFAULT;
     }
-    debug_str[count] = '\0';
+    debug_str[len] = '\0';
 
     if ((ptr = strstr(debug_str, "debug=")) != NULL) {
         ptr += 6;
@@ -837,31 +1110,51 @@ static int
 psample_proc_stats_show(struct seq_file *m, void *v)
 {
     seq_printf(m, "BCM KNET %s Callback Stats\n", PSAMPLE_GENL_NAME);
-    seq_printf(m, "  pkts filter psample cb         %10lu\n", g_psample_stats.pkts_f_psample_cb);
-    seq_printf(m, "  pkts sent to psample module    %10lu\n", g_psample_stats.pkts_f_psample_mod);
-    seq_printf(m, "  pkts handled by psample        %10lu\n", g_psample_stats.pkts_f_handled);
-    seq_printf(m, "  pkts pass through              %10lu\n", g_psample_stats.pkts_f_pass_through);
-    seq_printf(m, "  pkts with vlan tag checked     %10lu\n", g_psample_stats.pkts_f_tag_checked);
-    seq_printf(m, "  pkts with vlan tag stripped    %10lu\n", g_psample_stats.pkts_f_tag_stripped);
-    seq_printf(m, "  pkts with mc destination       %10lu\n", g_psample_stats.pkts_f_dst_mc);
-    seq_printf(m, "  pkts with cpu destination      %10lu\n", g_psample_stats.pkts_f_dst_cpu);
-    seq_printf(m, "  pkts current queue length      %10lu\n", g_psample_stats.pkts_c_qlen_cur);
-    seq_printf(m, "  pkts high queue length         %10lu\n", g_psample_stats.pkts_c_qlen_hi);
-    seq_printf(m, "  pkts drop max queue length     %10lu\n", g_psample_stats.pkts_d_qlen_max);
-    seq_printf(m, "  pkts drop no memory            %10lu\n", g_psample_stats.pkts_d_no_mem);
-    seq_printf(m, "  pkts drop no psample group     %10lu\n", g_psample_stats.pkts_d_no_group);
-    seq_printf(m, "  pkts drop sampling disabled    %10lu\n", g_psample_stats.pkts_d_sampling_disabled);
-    seq_printf(m, "  pkts drop psample not ready    %10lu\n", g_psample_stats.pkts_d_not_ready);
-    seq_printf(m, "  pkts drop metadata parse error %10lu\n", g_psample_stats.pkts_d_metadata);
-    seq_printf(m, "  pkts with invalid src port     %10lu\n", g_psample_stats.pkts_d_meta_srcport);
-    seq_printf(m, "  pkts with invalid dst port     %10lu\n", g_psample_stats.pkts_d_meta_dstport);
-    seq_printf(m, "  pkts with invalid orig pkt sz  %10lu\n", g_psample_stats.pkts_d_invalid_size);
-    seq_printf(m, "  pkts with psample only reason  %10lu\n", g_psample_stats.pkts_d_psample_only);
+    seq_printf(m, "  pkts filter psample cb         %10lu\n",
+               g_psample_stats.pkts_f_psample_cb);
+    seq_printf(m, "  pkts sent to psample module    %10lu\n",
+               g_psample_stats.pkts_f_psample_mod);
+    seq_printf(m, "  pkts handled by psample        %10lu\n",
+               g_psample_stats.pkts_f_handled);
+    seq_printf(m, "  pkts pass through              %10lu\n",
+               g_psample_stats.pkts_f_pass_through);
+    seq_printf(m, "  pkts with vlan tag checked     %10lu\n",
+               g_psample_stats.pkts_f_tag_checked);
+    seq_printf(m, "  pkts with vlan tag stripped    %10lu\n",
+               g_psample_stats.pkts_f_tag_stripped);
+    seq_printf(m, "  pkts with mc destination       %10lu\n",
+               g_psample_stats.pkts_f_dst_mc);
+    seq_printf(m, "  pkts with cpu destination      %10lu\n",
+               g_psample_stats.pkts_f_dst_cpu);
+    seq_printf(m, "  pkts current queue length      %10lu\n",
+               g_psample_stats.pkts_c_qlen_cur);
+    seq_printf(m, "  pkts high queue length         %10lu\n",
+               g_psample_stats.pkts_c_qlen_hi);
+    seq_printf(m, "  pkts drop max queue length     %10lu\n",
+               g_psample_stats.pkts_d_qlen_max);
+    seq_printf(m, "  pkts drop no memory            %10lu\n",
+               g_psample_stats.pkts_d_no_mem);
+    seq_printf(m, "  pkts drop no psample group     %10lu\n",
+               g_psample_stats.pkts_d_no_group);
+    seq_printf(m, "  pkts drop sampling disabled    %10lu\n",
+               g_psample_stats.pkts_d_sampling_disabled);
+    seq_printf(m, "  pkts drop psample not ready    %10lu\n",
+               g_psample_stats.pkts_d_not_ready);
+    seq_printf(m, "  pkts drop metadata parse error %10lu\n",
+               g_psample_stats.pkts_d_metadata);
+    seq_printf(m, "  pkts with invalid src port     %10lu\n",
+               g_psample_stats.pkts_d_meta_srcport);
+    seq_printf(m, "  pkts with invalid dst port     %10lu\n",
+               g_psample_stats.pkts_d_meta_dstport);
+    seq_printf(m, "  pkts with invalid orig pkt sz  %10lu\n",
+               g_psample_stats.pkts_d_invalid_size);
+    seq_printf(m, "  pkts with psample only reason  %10lu\n",
+               g_psample_stats.pkts_d_psample_only);
     return 0;
 }
 
 static int
-psample_proc_stats_open(struct inode * inode, struct file * file)
+psample_proc_stats_open(struct inode *inode, struct file *file)
 {
     return single_open(file, psample_proc_stats_show, NULL);
 }
@@ -878,6 +1171,10 @@ psample_proc_stats_write(struct file *file, const char *buf,
 {
     int qlen_cur = 0;
     unsigned long flags;
+
+    if (!capable(CAP_NET_ADMIN)) {
+        return -EPERM;
+    }
 
     spin_lock_irqsave(&g_psample_work.lock, flags);
     qlen_cur = g_psample_stats.pkts_c_qlen_cur;
@@ -912,28 +1209,42 @@ psample_proc_init(char *procfs_path)
     psample_proc_root = proc_mkdir(psample_procfs_path, NULL);
 
     /* create procfs for psample stats */
-    PROC_CREATE(entry, "stats", 0666, psample_proc_root,
+    PROC_CREATE(entry, "stats", 0644, psample_proc_root,
                 &psample_proc_stats_file_ops);
     if (entry == NULL) {
         return -1;
     }
 
     /* create procfs for setting sample rates */
-    PROC_CREATE(entry, "rate", 0666, psample_proc_root,
+    PROC_CREATE(entry, "rate", 0644, psample_proc_root,
                 &psample_proc_rate_file_ops);
     if (entry == NULL) {
         return -1;
     }
 
     /* create procfs for setting sample size */
-    PROC_CREATE(entry, "size", 0666, psample_proc_root,
+    PROC_CREATE(entry, "size", 0644, psample_proc_root,
                 &psample_proc_size_file_ops);
     if (entry == NULL) {
         return -1;
     }
 
+    /* create procfs for setting egress sample rates */
+    PROC_CREATE(entry, "egr_rate", 0644, psample_proc_root,
+                &psample_proc_egr_rate_file_ops);
+    if (entry == NULL) {
+        return -1;
+    }
+
+    /* create procfs for setting egress sample size */
+    PROC_CREATE(entry, "egr_size", 0644, psample_proc_root,
+                &psample_proc_egr_size_file_ops);
+    if (entry == NULL) {
+        return -1;
+    }
+
     /* create procfs for debug log */
-    PROC_CREATE(entry, "debug", 0666, psample_proc_root,
+    PROC_CREATE(entry, "debug", 0644, psample_proc_root,
                 &psample_proc_debug_file_ops);
     if (entry == NULL) {
         return -1;
@@ -946,10 +1257,12 @@ static int
 psample_proc_cleanup(void)
 {
     if (psample_proc_root) {
-        remove_proc_entry("stats", psample_proc_root);
-        remove_proc_entry("rate",  psample_proc_root);
-        remove_proc_entry("size",  psample_proc_root);
-        remove_proc_entry("debug", psample_proc_root);
+        remove_proc_entry("stats",    psample_proc_root);
+        remove_proc_entry("rate",     psample_proc_root);
+        remove_proc_entry("size",     psample_proc_root);
+        remove_proc_entry("egr_rate", psample_proc_root);
+        remove_proc_entry("egr_size", psample_proc_root);
+        remove_proc_entry("debug",    psample_proc_root);
         remove_proc_entry(psample_procfs_path, NULL);
         psample_proc_root = NULL;
     }
@@ -1033,6 +1346,8 @@ bcmgenl_psample_init(char *procfs_path)
 
     bkn_filter_cb_attr_register(psample_filter_cb, &fcb_attr);
     bcmgenl_netif_default_sample_set(PSAMPLE_RATE_DFLT, PSAMPLE_SIZE_DFLT);
+    bcmgenl_netif_default_egr_sample_set(PSAMPLE_EGR_RATE_DFLT,
+                                         PSAMPLE_EGR_SIZE_DFLT);
     psample_proc_init(procfs_path);
     return psample_init();
 }

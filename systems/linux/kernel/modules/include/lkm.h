@@ -53,6 +53,7 @@
 #endif
 #include <linux/slab.h>
 #endif
+#include <linux/timer.h>
 #include <linux/module.h>
 
 /* Helper defines for multi-version kernel  support */
@@ -197,6 +198,26 @@
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
 #define kernel_ethtool_ts_info ethtool_ts_info
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0)
+#define timer_arg(var, context, timer_fieldname) \
+    (typeof(var))(context)
+#define timer_context_t unsigned long
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0)
+#define timer_context_t struct timer_list *
+#define timer_arg(var, context, timer_fieldname) \
+    from_timer(var, context, timer_fieldname)
+#else
+#define timer_context_t struct timer_list *
+#define timer_arg(var, context, timer_fieldname) \
+    timer_container_of(var, context, timer_fieldname)
+#endif
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,2,0))
+#define timer_del_sync(_timer) del_timer_sync(_timer)
+#else
+#define timer_del_sync(_timer) timer_delete_sync(_timer)
 #endif
 
 #endif /* __COMMON_LINUX_KRN_LKM_H__ */

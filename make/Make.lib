@@ -72,7 +72,3 @@ endif
 	$Q$(RM) ${targetlib}
 
 distclean:: clean
-
-ifeq ($(DNX_FAST_MODE),1)
--include $(SDK)/tools/dnx/make/lib.mk
-endif

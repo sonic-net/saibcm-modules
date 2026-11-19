@@ -44,9 +44,9 @@
 # the 'winner' is '-DDISPLAY_MEM_USAGE=1' while, with UNIQUE, the winner is '-DDISPLAY_MEM_USAGE=0'.
 # Also note that, for UNIQE to work properly, we need to attach compilation flags, which are expected
 # to appear a few time, to their argument. So, for example, we should use
-#   KFLAGS += -include$(LINUX_INCLUDE_BUILD)/generated/uapi/linux/version.h
+#   CFGFLAGS += -include$(LINUX_INCLUDE_BUILD)/generated/uapi/linux/version.h
 # rather than
-#  KFLAGS += -include $(LINUX_INCLUDE_BUILD)/generated/uapi/linux/version.h
+#   CFGFLAGS += -include $(LINUX_INCLUDE_BUILD)/generated/uapi/linux/version.h
 #
 # Note that, to be on the safe side, we only 'clean' duplicates of
 # either -D or -I type. The original 'cleanup' was for all options:
@@ -62,6 +62,9 @@ ifeq ($(ARCH),arm64)
   SDK_CPPFLAGS := $(call XUNIQE,$(SDK_CPPFLAGS))
   CXXFLAGS := $(call XUNIQE,$(CXXFLAGS))
 endif
+
+# Include GCOV coverage instrumentation (applies per-directory CFLAGS when GCOV=1)
+-include $(SDK)/make/Make.gcov
 
 ifeq (,$(findstring clean,$(MAKECMDGOALS)))
 
@@ -142,12 +145,5 @@ UNIQE = $(if $1,$(firstword $1) $(call UNIQE,$(filter-out $(firstword $1),$1)))
 CFLAGS := $(call UNIQE,$(CFLAGS))
 CFGFLAGS := $(call UNIQE,$(CFGFLAGS))
 endif
-clean_d::
-ifdef QUIET
-	@$(ECHO) Cleaning dependencies for ${LOCALDIR}
-endif
-ifdef GENERATE_C_FILES
-	$Q$(RM) $(ZFC:%=$(SDK)/$(LOCALDIR)/%) $(ZFC:%.c=$(SDK)/$(LOCALDIR)/%Console.c)
-endif
 
-clean:: clean_d
+clean::

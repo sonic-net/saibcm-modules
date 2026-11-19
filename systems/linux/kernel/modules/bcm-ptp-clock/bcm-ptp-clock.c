@@ -1,17 +1,31 @@
 /*
- * Copyright 2017 Broadcom
  *
+ * $Copyright: 2017-2025 Broadcom Inc. All rights reserved.
+ * 
+ * Permission is granted to use, copy, modify and/or distribute this
+ * software under either one of the licenses below.
+ * 
+ * License Option 1: GPL
+ * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as
  * published by the Free Software Foundation (the "GPL").
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License version 2 (GPLv2) for more details.
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 (GPLv2) along with this source code.
+ * 
+ * 
+ * License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
+ * 
+ * This software is governed by the Broadcom Open Network Switch APIs license:
+ * https://www.broadcom.com/products/ethernet-connectivity/software/opennsa $
+ * 
+ * 
  */
 
 /*
@@ -194,6 +208,26 @@ MODULE_PARM_DESC(shared_phc,
 #define CMIC_CMC_SCHAN_MESSAGE_20r(BASE) (BASE + 0x0000005c)
 #define CMIC_CMC_SCHAN_MESSAGE_21r(BASE) (BASE + 0x00000060)
 
+#define CMIC_RPE_PKT_PORTS_0r 0x16140
+#define CMIC_RPE_PKT_PORTS_1r 0x16144
+#define CMIC_RPE_PKT_PORTS_2r 0x16148
+#define CMIC_RPE_PKT_PORTS_3r 0x1614c
+#define CMIC_RPE_PKT_PORTS_4r 0x16150
+#define CMIC_RPE_PKT_PORTS_5r 0x16154
+#define CMIC_RPE_PKT_PORTS_6r 0x16158
+#define CMIC_RPE_PKT_PORTS_7r 0x1615c
+
+#define FW_COMM_RPE_REGS           ((dev_info->init_data).fw_comm_rpe_regs)
+/* On CMICX devices, use RPE_PKT_PORTx registers in the place of SCHAN registers. */
+#define FW_MESSAGE_REG_14r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_0r : CMIC_CMC_SCHAN_MESSAGE_14r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_15r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_1r : CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_16r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_2r : CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_17r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_3r : CMIC_CMC_SCHAN_MESSAGE_17r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_18r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_4r : CMIC_CMC_SCHAN_MESSAGE_18r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_19r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_5r : CMIC_CMC_SCHAN_MESSAGE_19r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_20r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_6r : CMIC_CMC_SCHAN_MESSAGE_20r(CMIC_CMC_BASE))
+#define FW_MESSAGE_REG_21r    (FW_COMM_RPE_REGS ? CMIC_RPE_PKT_PORTS_7r : CMIC_CMC_SCHAN_MESSAGE_21r(CMIC_CMC_BASE))
+
 u32 hostcmd_regs[5] = { 0 };
 
 #define BKSYNC_NUM_PORTS            128    /* NUM_PORTS where 2-step is supported. */
@@ -206,7 +240,6 @@ u32 hostcmd_regs[5] = { 0 };
 
 /* Service request commands to Firmware. */
 enum {
-#ifdef BDE_EDK_SUPPORT
     BKSYNC_DONE                     = (0x0),
     BKSYNC_INIT                     = (0x1),
     BKSYNC_DEINIT                   = (0x2),
@@ -230,26 +263,6 @@ enum {
     BKSYNC_NTP_TOD                  = (0x14),
     BKSYNC_PTP_TOD_GET              = (0x15),
     BKSYNC_NTP_TOD_GET              = (0x16),
-#else
-    BKSYNC_DONE                     = (0x1),
-    BKSYNC_INIT                     = (0x2),
-    BKSYNC_DEINIT                   = (0x3),
-    BKSYNC_GETTIME                  = (0x4),
-    BKSYNC_SETTIME                  = (0x5),
-    BKSYNC_FREQCOR                  = (0x6),
-    BKSYNC_PBM_UPDATE               = (0x7),
-    BKSYNC_ADJTIME                  = (0x8),
-    BKSYNC_GET_TSTIME               = (0x9),
-    BKSYNC_MTP_TS_UPDATE_ENABLE     = (0xa),
-    BKSYNC_MTP_TS_UPDATE_DISABLE    = (0xb),
-    BKSYNC_ACK_TSTIME               = (0xc),
-    BKSYNC_SYSINFO                  = (0xd),
-    BKSYNC_BROADSYNC                = (0xe),
-    BKSYNC_GPIO                     = (0xf),
-    BKSYNC_EVLOG                    = (0x10),
-    BKSYNC_EXTTSLOG                 = (0x11),
-    BKSYNC_GPIO_PHASEOFFSET         = (0x12),
-#endif
 };
 
 enum {
@@ -447,11 +460,9 @@ typedef struct bksync_fw_debug_event_tstamps_s {
     fw_tstamp_t cur_tstamp;
 } __ATTRIBUTE_PACKED__ bksync_fw_debug_event_tstamps_t;
 
-#ifndef BDE_EDK_SUPPORT
 typedef struct bksync_evlog_s {
     bksync_fw_debug_event_tstamps_t event_timestamps[NUM_TS_EVENTS];
 } __ATTRIBUTE_PACKED__ bksync_evlog_t;
-#endif
 
 /* Timestamps for EXTTS from Firmware */
 #define BKSYNC_NUM_GPIO_EVENTS     6       /* gpio0 = event0 ..... gpio5 = event5 on single device */
@@ -511,6 +522,8 @@ typedef struct bksync_init_info_s {
     u32 host_cpu_sysport;
     u32 udh_len;
     u8  application_v2;
+    u8  fw_comm_rpe_regs;
+    u8  pph_udh_present;
 } bksync_init_info_t;
 
 typedef struct bksync_bs_info_s {
@@ -539,11 +552,9 @@ typedef struct bksync_ntp_tod_info_s {
     uint64_t epoch_offset; /* 48bit epoch offset */
 } bksync_ntp_tod_info_t;
 
-#ifndef BDE_EDK_SUPPORT
 typedef struct bksync_evlog_info_s {
     u32 enable;
 } bksync_evlog_info_t;
-#endif
 
 typedef struct bksync_ptp_time_s {
     int ptp_pair_lock;
@@ -827,20 +838,20 @@ typedef struct bksync_dev {
     int dcb_type;
     int dev_no;
     uint16_t dev_id;
-    uint8_t max_core;      /* FW cores */
+    uint8_t nof_uc;         /* Number of uC's */
+    uint8_t nof_cores;      /* Number of main cores */
     volatile int dev_init; /* Indicates if the associated core is initialized */
     volatile void *base_addr;   /* address for PCI register access */
     struct DMA_DEV *dma_dev;     /* Required for DMA memory control */
     dma_addr_t dma_mem;
-#ifdef BDE_EDK_SUPPORT
-    volatile bksync_fw_comm_t *fw_comm;
-#else
+    volatile bksync_fw_comm_t *comm_mem;   /* Virtual addr used by driver for comm */
+    dma_addr_t comm_mem_paddr;             /* Physical addr used by the FW for comm */
+    int comm_mem_size;
+    dma_addr_t extts_dma_mem_addr;              /* Physical addr used by the FW for EXTTS */
+    int extts_dma_mem_size;
     int evlog_dma_mem_size;
     volatile bksync_evlog_t *evlog;       /* dma-able address for fw updates */
     bksync_evlog_info_t evlog_info[NUM_TS_EVENTS];
-    int extts_dma_mem_size;
-    dma_addr_t extts_dma_mem_addr;
-#endif
     bksync_gpio_info_t bksync_gpio_info[6];
     bksync_bs_info_t bksync_bs_info[2];
     volatile bksync_fw_extts_log_t *extts_log; /* dma-able/virtual address for fw updates */
@@ -933,6 +944,8 @@ static int bksync_ptp_remove(void);
         } \
     } while (0)
 
+#define MEMORY_BARRIER smp_mb()
+
 static void
 ptp_sleep(int jiffies)
 {
@@ -943,7 +956,33 @@ ptp_sleep(int jiffies)
 
 }
 
-#ifdef BDE_EDK_SUPPORT
+static u32 host_to_fw_cmd_type(bksync_dev_t *dev_info, u32 cmd_type)
+{
+    if (dev_info->comm_mem) {
+        return cmd_type;
+    } else {
+        if ((cmd_type >= BKSYNC_DONE) &&
+            (cmd_type <= BKSYNC_EXTTSLOG)) {
+            return (cmd_type + 1);
+        } else {
+            return cmd_type;
+        }
+    }
+}
+
+static u32 fw_to_host_cmd_type(bksync_dev_t *dev_info, u32 cmd_type)
+{
+    if (dev_info->comm_mem) {
+        return cmd_type;
+    } else {
+        if (cmd_type >= BKSYNC_GPIO_PHASEOFFSET) {
+            return cmd_type;
+        } else {
+            return (cmd_type - 1);
+        }
+    }
+}
+
 static void bksync_hostcmd_data_op(int dev_no, int setget, u64 *d1, u64 *d2)
 {
     bksync_dev_t *dev_info = &ptp_priv->dev_info[dev_no];
@@ -957,77 +996,56 @@ static void bksync_hostcmd_data_op(int dev_no, int setget, u64 *d1, u64 *d2)
     if (setget) {
         if (d1) {
             data = *d1;
-            dev_info->fw_comm->dw1[0] = (data & 0xFFFFFFFF);
-            dev_info->fw_comm->dw1[1] = (data >> 32);
+            if (dev_info->comm_mem) {
+                dev_info->comm_mem->dw1[0] = (data & 0xFFFFFFFF);
+                dev_info->comm_mem->dw1[1] = (data >> 32);
+            } else {
+                w0 = (data & 0xFFFFFFFF);
+                w1 = (data >> 32);
+                DEV_WRITE32(dev_info, hostcmd_regs[1], w0);
+                DEV_WRITE32(dev_info, hostcmd_regs[2], w1);
+            }
         }
 
         if (d2) {
             data = *d2;
-            dev_info->fw_comm->dw2[0] = (data & 0xFFFFFFFF);
-            dev_info->fw_comm->dw2[1] = (data >> 32);
+            if (dev_info->comm_mem) {
+                dev_info->comm_mem->dw2[0] = (data & 0xFFFFFFFF);
+                dev_info->comm_mem->dw2[1] = (data >> 32);
+            } else {
+                w0 = (data & 0xFFFFFFFF);
+                w1 = (data >> 32);
+                DEV_WRITE32(dev_info, hostcmd_regs[3], w0);
+                DEV_WRITE32(dev_info, hostcmd_regs[4], w1);
+            }
         }
 
     } else {
         if (d1) {
-            w0 = dev_info->fw_comm->dw1[0];
-            w1 = dev_info->fw_comm->dw1[1];
+            if (dev_info->comm_mem) {
+                w0 = dev_info->comm_mem->dw1[0];
+                w1 = dev_info->comm_mem->dw1[1];
+            } else {
+                DEV_READ32(dev_info, hostcmd_regs[1], &w0);
+                DEV_READ32(dev_info, hostcmd_regs[2], &w1);
+            }
             data = (((u64)w1 << 32) | (w0));
             *d1 = data;
         }
 
         if (d2) {
-            w0 = dev_info->fw_comm->dw2[0];
-            w1 = dev_info->fw_comm->dw2[1];
+            if (dev_info->comm_mem) {
+                w0 = dev_info->comm_mem->dw2[0];
+                w1 = dev_info->comm_mem->dw2[1];
+            } else {
+                DEV_READ32(dev_info, hostcmd_regs[3], &w0);
+                DEV_READ32(dev_info, hostcmd_regs[4], &w1);
+            }
             data = (((u64)w1 << 32) | (w0));
             *d2 = data;
         }
     }
 }
-#else
-static void bksync_hostcmd_data_op(int dev_no, int setget, u64 *d1, u64 *d2)
-{
-    bksync_dev_t *dev_info = &ptp_priv->dev_info[dev_no];
-    u32 w0, w1;
-    u64 data;
-
-    if (!d1) {
-        return;
-    }
-
-    if (setget) {
-        if (d1) {
-            data = *d1;
-            w0 = (data & 0xFFFFFFFF);
-            w1 = (data >> 32);
-            DEV_WRITE32(dev_info, hostcmd_regs[1], w0);
-            DEV_WRITE32(dev_info, hostcmd_regs[2], w1);
-        }
-
-        if (d2) {
-            data = *d2;
-
-            w0 = (data & 0xFFFFFFFF);
-            w1 = (data >> 32);
-            DEV_WRITE32(dev_info, hostcmd_regs[3], w0);
-            DEV_WRITE32(dev_info, hostcmd_regs[4], w1);
-        }
-    } else {
-        if (d1) {
-            DEV_READ32(dev_info, hostcmd_regs[1], &w0);
-            DEV_READ32(dev_info, hostcmd_regs[2], &w1);
-            data = (((u64)w1 << 32) | (w0));
-            *d1 = data;
-        }
-
-        if (d2) {
-            DEV_READ32(dev_info, hostcmd_regs[3], &w0);
-            DEV_READ32(dev_info, hostcmd_regs[4], &w1);
-            data = (((u64)w1 << 32) | (w0));
-            *d2 = data;
-        }
-    }
-}
-#endif
 
 static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *data1)
 {
@@ -1048,22 +1066,19 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
     start = ktime_get();
 
     /* init data */
-#ifdef BDE_EDK_SUPPORT
-    if (dev_info->fw_comm == NULL) {
-        DBG_ERR(("Device is not initialized\n"));
-        return -1;
+    if (dev_info->comm_mem) {
+        dev_info->comm_mem->dw1[0] = 0;
+        dev_info->comm_mem->dw1[1] = 0;
+        dev_info->comm_mem->dw2[0] = 0;
+        dev_info->comm_mem->dw2[1] = 0;
+    } else {
+        DEV_WRITE32(dev_info, hostcmd_regs[1], 0x0);
+        DEV_WRITE32(dev_info, hostcmd_regs[2], 0x0);
+        DEV_WRITE32(dev_info, hostcmd_regs[3], 0x0);
+        DEV_WRITE32(dev_info, hostcmd_regs[4], 0x0);
     }
 
-    dev_info->fw_comm->dw1[0] = 0;
-    dev_info->fw_comm->dw1[1] = 0;
-    dev_info->fw_comm->dw2[0] = 0;
-    dev_info->fw_comm->dw2[1] = 0;
-#else
-    DEV_WRITE32(dev_info, hostcmd_regs[1], 0x0);
-    DEV_WRITE32(dev_info, hostcmd_regs[2], 0x0);
-    DEV_WRITE32(dev_info, hostcmd_regs[3], 0x0);
-    DEV_WRITE32(dev_info, hostcmd_regs[4], 0x0);
-#endif
+    MEMORY_BARRIER;
 
     switch (cmd) {
         case BKSYNC_INIT:
@@ -1136,12 +1151,10 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
             snprintf(cmd_str, sizeof(cmd_str), "KSYNC_EXTTSLOG");
             bksync_hostcmd_data_op(dev_no, 1, (u64 *)data0, (u64 *)data1);
             break;
-#ifdef BDE_EDK_SUPPORT
         case BKSYNC_GET_EXTTS_BUFF:
             snprintf(cmd_str, sizeof(cmd_str), "BKSYNC_GET_EXTTS_BUFF");
             bksync_hostcmd_data_op(dev_no, 1, (u64 *)data0, (u64 *)data1);
             break;
-#endif
         case BKSYNC_GPIO_PHASEOFFSET:
             snprintf(cmd_str, sizeof(cmd_str), "BKSYNC_GPIO_PHASEOFFSET");
             bksync_hostcmd_data_op(dev_no, 1, (u64 *)data0, (u64 *)data1);
@@ -1169,18 +1182,26 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
             break;
     }
 
-#ifdef BDE_EDK_SUPPORT
-    dev_info->fw_comm->cmd = cmd;
-#else
-    DEV_WRITE32(dev_info, hostcmd_regs[0], cmd);
-#endif
+    MEMORY_BARRIER;
+
+    if (dev_info->comm_mem) {
+        dev_info->comm_mem->cmd = cmd;
+    } else {
+        u32 h_cmd = host_to_fw_cmd_type(dev_info, cmd);
+        DEV_WRITE32(dev_info, hostcmd_regs[0], h_cmd);
+    }
+
+    MEMORY_BARRIER;
 
     do {
-#ifdef BDE_EDK_SUPPORT
-        cmd_status = dev_info->fw_comm->cmd;
-#else
-        DEV_READ32(dev_info, hostcmd_regs[0], &cmd_status);
-#endif
+        if (dev_info->comm_mem) {
+            cmd_status = dev_info->comm_mem->cmd;
+        } else {
+            DEV_READ32(dev_info, hostcmd_regs[0], &cmd_status);
+            cmd_status = fw_to_host_cmd_type(dev_info, cmd_status);
+        }
+
+        MEMORY_BARRIER;
 
         if (cmd_status == BKSYNC_DONE) {
             ret = 0;
@@ -1191,8 +1212,7 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
                 case BKSYNC_PTP_TOD_GET:
                 case BKSYNC_NTP_TOD_GET:
 #endif
-#ifndef BDE_EDK_SUPPORT
-                    {
+                    if (dev_info->comm_mem == NULL) {
                         u64 d0 = 0ULL;
                         u64 d1 = 0ULL;
                         int retry2_cnt = 3;
@@ -1211,24 +1231,20 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
                         } while (retry2_cnt);
                         if (retry2_cnt == 0)
                             ret = -1;
+                    } else {
+                        bksync_hostcmd_data_op(dev_no, 0, (u64 *)data0, (u64 *)data1);
                     }
                     break;
-#else
-                    bksync_hostcmd_data_op(dev_no, 0, (u64 *)data0, (u64 *)data1);
-                    break;
-#endif
                 case BKSYNC_BROADSYNC:
                     if ((subcmd == BKSYNC_BROADSYNC_BS0_STATUS_GET) ||
                         (subcmd == BKSYNC_BROADSYNC_BS1_STATUS_GET)) {
                         bksync_hostcmd_data_op(dev_no, 0, (u64 *)data0, (u64 *)data1);
                     }
                     break;
-#ifdef BDE_EDK_SUPPORT
                     /* Get the host ram address from fw.*/
                 case BKSYNC_GET_EXTTS_BUFF:
                     bksync_hostcmd_data_op(dev_no, 0, (u64 *)data0, (u64 *)data1);
                     break;
-#endif
                 default:
                     break;
             }
@@ -1237,6 +1253,8 @@ static int bksync_cmd_go(bksync_dev_t *dev_info, u32 cmd, void *data0, void *dat
         BKSYNC_U_SLEEP(100);
         retry_cnt--;
     } while (retry_cnt);
+
+    MEMORY_BARRIER;
 
     now = ktime_get();
     mutex_unlock(&dev_info->ptp_lock);
@@ -1452,24 +1470,7 @@ static int bksync_exttslog_cmd(bksync_dev_t *dev_info, int event, int enable)
     int ret = 0;
     u64 subcmd = 0, subcmd_data = 0;
 
-#ifdef BDE_EDK_SUPPORT
-    sal_vaddr_t vaddr = 0;
-
-    if (NULL == dev_info->extts_log) {
-        ret = bksync_cmd_go(dev_info, BKSYNC_GET_EXTTS_BUFF,
-                &subcmd, &subcmd_data);
-        DBG_VERB((" EXTTS: phy_addr:0x%llx\n", subcmd_data));
-
-        ret = lkbde_get_phys_to_virt(dev_info->dev_no, (phys_addr_t)subcmd_data, &vaddr);
-        if ((ret != 0) || (vaddr == 0)) {
-            DBG_ERR(("EXTTS: failed to get virt_addr for the phy_addr\n"));
-            return ret;
-        }
-        dev_info->extts_log = (bksync_fw_extts_log_t *)vaddr;
-        DBG_VERB((" EXTTS: virt_addr:%p:0x%llx\n", dev_info->extts_log, (uint64_t)vaddr));
-        subcmd_data = 0;
-    }
-#else
+#ifndef BDE_EDK_SUPPORT
     subcmd_data = dev_info->extts_dma_mem_addr;
 #endif
 
@@ -2165,6 +2166,7 @@ bksync_pkt_custom_encap_ptprx_get(uint8_t *pkt, uint64_t *ing_ptptime)
     tot_len = len;
 
     if (ing_ptptime != NULL) {
+
         BKSYNC_UNPACK_U32(custom_hdr, seq_id);
 
         /* remaining length of custom encap */
@@ -2172,9 +2174,17 @@ bksync_pkt_custom_encap_ptprx_get(uint8_t *pkt, uint64_t *ing_ptptime)
 
         /* process tlv */
         while (len > 0) {
+            /* Require a full 4-byte TLV header before parsing */
+            if (len < 4) {
+                return -1;
+            }
             BKSYNC_UNPACK_U8(custom_hdr, nh_type);
             BKSYNC_UNPACK_U8(custom_hdr, nh_rsvd);
             BKSYNC_UNPACK_U16(custom_hdr, nh_len);
+            /* Prevent nh_len from driving custom_hdr past the encap boundary */
+            if (nh_len > len) {
+                return -1;
+            }
             len = len - (nh_len);
             if (nh_rsvd != 0x0) {
                 continue; /* invalid tlv */
@@ -2297,7 +2307,7 @@ static int bksync_ptp_hw_tstamp_rx_time_upscale(int dev_no, int port, struct sk_
     custom_encap_len = bksync_pkt_custom_encap_ptprx_get((skb->data), ts);
 
     /* Remove the custom encap header from pkt */
-    if (custom_encap_len > 0) {
+    if (custom_encap_len > 0 && custom_encap_len <= skb->len) {
 
         skb_pull(skb, custom_encap_len);
 
@@ -2431,29 +2441,31 @@ bksync_dpp_otsh_update(struct sk_buff *skb, int hwts, int encap_type, int ptp_hd
 
     return;
 }
-/* IPv6 WAR to avoid H/W limitation of JR2x series devices */
+/*
+ * Builds the ASE1588+TSH extension header for a CPU-injected outgoing 1588 packet on DNX
+ * (JR2/JR3/J3AI). Common to L2, IPv4 and IPv6 - PPH+UDH presence is a per-device property
+ * (dev_info->init_data.pph_udh_present.
+ */
 static void
-bksync_dnx_ase1588_tsh_hdr_update_ipv6(bksync_dev_t *dev_info, struct sk_buff *skb, int hwts, int encap_type, int ptp_hdr_offset)
+bksync_dnx_ase1588_tsh_hdr_update(bksync_dev_t *dev_info, struct sk_buff *skb, int hwts, int encap_type, int system_hdr_len, int transport_hdr_len)
 {
     int itmh_offset = 0, ftmh_ase_offset = 0, tse_offset = 0;
-    int pph_udh_present = 0;
-    /* Module Hdr [16] + PTCH [2] + ITMH [5] + ASE1588 [6] + TSH [4] + Internal Hdr [12] + UDH base [1] */
+    int embedded_pph_udh = (dev_info->init_data).pph_udh_present;
+    int ptp_hdr_offset = 0;
 
-    /* For DNX3 for CF update 1588v2_Offset should also have system_header length of except Module HDR [16] */
+    /* Module Hdr [16] + PTCH [2 or 3] + ITMH [5] + ASE1588 [6] + TSH [4] (+ PPH [12] + UDH base [1] if embedded_pph_udh) */
     if ((dev_info->init_data).application_v2) {
-        ptp_hdr_offset -= BKSYNC_DNXJR2_MODULE_HEADER_LEN;
+        ptp_hdr_offset = system_hdr_len + transport_hdr_len - BKSYNC_DNXJR2_MODULE_HEADER_LEN;
     } else {
-        ptp_hdr_offset -= BKSYNC_DNXJR2_MODULE_HEADER_LEN - 1;
+        ptp_hdr_offset = transport_hdr_len;
     }
 
-    if (ptp_hdr_offset == 93) {
-        /* PTCH [3] + ITMH [5] + ASE1588 [6] + TSH [4] + Internal Hdr [12] + UDH base [1] = 31 + IPv6 [62] + VLAN [0] = 93 */
+    if (embedded_pph_udh) {
         /* Inserting TSH and ASE before PPH and UDH - shifted PPH and UDH by 13 bytes in skb->data */
         uint8_t pph_start[BKSYNC_DNXJR2_PPH_HEADER_LEN];
         uint8_t udh_start;
         itmh_offset = BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_1_SIZE;
 
-        pph_udh_present = 1;
         memcpy(pph_start, &skb->data[itmh_offset + BKSYNC_DNXJR2_ITMH_HEADER_LEN], BKSYNC_DNXJR2_PPH_HEADER_LEN);
         udh_start = skb->data[itmh_offset + BKSYNC_DNXJR2_ITMH_HEADER_LEN + BKSYNC_DNXJR2_PPH_HEADER_LEN];
         /* copying pph after ase + tsh 34 = module + ptch + itmh + ase + tsh */
@@ -2462,16 +2474,18 @@ bksync_dnx_ase1588_tsh_hdr_update_ipv6(bksync_dev_t *dev_info, struct sk_buff *s
         skb->data[46] = udh_start;
     }
     else {
-        /* PTCH [2] + ITMH [5] + ASE1588 [6] + TSH [4] + Internal Hdr [12] + UDH base [1] = 30 + IPv6 [62] + VLAN [4] = 96 */
-        /* PTCH [2] + ITMH [5] + ASE1588 [6] + TSH [4] + Internal Hdr [12] + UDH base [1] = 30 + IPv6 [62] + VLAN [0] = 92 */
         itmh_offset = BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_2_SIZE;
     }
     /* ITMH */
     /* App Specific Ext Present  ASE 1588*/
     skb->data [itmh_offset] |= (0x1 << 3);
 
-    /* PPH_TYPE - TSH  +  Internal Hdr */
-    skb->data [itmh_offset] |= (0x3 << 1);   /* TSH + PPH Only */
+    /* PPH_TYPE */
+    if (embedded_pph_udh) {
+        skb->data [itmh_offset] |= (0x3 << 1);   /* TSH + PPH Only */
+    } else {
+        skb->data [itmh_offset] |= (0x2 << 1);   /* TSH Only */
+    }
 
     ftmh_ase_offset = itmh_offset + BKSYNC_DNXJR2_ITMH_HEADER_LEN;
     /* ASE 1588 ext */
@@ -2481,86 +2495,10 @@ bksync_dnx_ase1588_tsh_hdr_update_ipv6(bksync_dev_t *dev_info, struct sk_buff *s
     /* encap type - 2 L2, 4 & 6 UDP */
     skb->data[ftmh_ase_offset + 4] |= (((encap_type == 2) ? 1 : 0) << 7);
 
-    /* ASE1588 1588v2 command -  one step or two step  3bit (14:12) */
-    /* ASE1588 1588v2 command should be zero for CF update */
-
-        /*  offset to start of 1588v2 frame  - 8 bit (11:4) */
-    skb->data [ftmh_ase_offset + 4] = skb->data [ftmh_ase_offset + 4] | ((ptp_hdr_offset) & 0xf0) >> 4;
-    skb->data [ftmh_ase_offset + 5] = ((ptp_hdr_offset) & 0xf) << 4;
-
-    /* ASE1588 type = 1588v2  - 4 bit (0:3) */
-    skb->data [ftmh_ase_offset + 5] = skb->data [ftmh_ase_offset + 5] | 0x01;
-
-    tse_offset = ftmh_ase_offset + BKSYNC_DNXJR2_FTMH_APP_SPECIFIC_EXT_LEN;
-    memset(&skb->data[tse_offset], 0x0, BKSYNC_DNXJR2_TSH_HDR_SIZE);
-
-    if(!pph_udh_present) {
-        /* Internal Header */
-        skb->data [33] = skb->data [34] = skb->data [35] = skb->data [36] = 0x00;
-        skb->data [37] = skb->data [38] = skb->data [39] = skb->data [40] = 0x00;
-        skb->data [41] = skb->data [42] = skb->data [43] = skb->data [44] = 0x00;
-
-        skb->data [44] = 0x42;
-        skb->data [43] = 0x07;
-        skb->data [42] = 0x10;
-
-        /* UDH Base Hdr */
-        skb->data [45] = 0;
-    }
-    return;
-}
-
-static void
-bksync_dnx_ase1588_tsh_hdr_update(bksync_dev_t *dev_info, struct sk_buff *skb, int hwts, int encap_type, int ptp_hdr_offset)
-{
-    int itmh_offset = 0, ftmh_ase_offset = 0, tse_offset = 0;
-        /* Module Hdr [16] + PTCH [2] + ITMH [5] + ASE1588 [6] + TSH [4] */
-
-        /* For JR3 for CF update 1588v2_Offset should also have system_header length of
-         * PTCH [2] + ITMH [5] + ASE1588 [6] + TSH [4] = 17. */
-        if ((dev_info->init_data).application_v2) {
-            ptp_hdr_offset -= BKSYNC_DNXJR2_MODULE_HEADER_LEN;
-        }
-        else {
-            ptp_hdr_offset -= (BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_2_SIZE + BKSYNC_DNXJR2_ITMH_HEADER_LEN +
-                                    BKSYNC_DNXJR2_FTMH_APP_SPECIFIC_EXT_LEN + BKSYNC_DNXJR2_TSH_HDR_SIZE);
-        }
-
-    /* Inserting TSH and ASE before PPH and UDH - shifted PPH and UDH by 13 bytes in skb->data */
-    if (ptp_hdr_offset >= 73) {   /*PTCH1 + ITMH + ASE1588 + TSH + PPH + UDH + Upto start of PTP = 73*/
-        uint8_t pph_start[BKSYNC_DNXJR2_PPH_HEADER_LEN];
-        uint8_t udh_start;
-        itmh_offset = BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_1_SIZE;
-
-        memcpy(&pph_start[0], &skb->data[itmh_offset + BKSYNC_DNXJR2_ITMH_HEADER_LEN], BKSYNC_DNXJR2_PPH_HEADER_LEN);
-        udh_start = skb->data[BKSYNC_DNXJR2_ITMH_HEADER_LEN + BKSYNC_DNXJR2_PPH_HEADER_LEN];
-        /* copying pph after ase + tsh 34 = module + ptch + itmh + ase + tsh */
-        memcpy(&skb->data[34], pph_start, BKSYNC_DNXJR2_PPH_HEADER_LEN);
-        /* copying udh after pph 46 = module + ptch + itmh + ase + tsh + pph */
-        skb->data[46] = udh_start;
-    }
-    else {
-        itmh_offset = BKSYNC_DNXJR2_MODULE_HEADER_LEN + BKSYNC_DNX_PTCH_2_SIZE;
-    }
-    /* ITMH */
-    /* App Specific Ext Present */
-    skb->data [itmh_offset] |= (1 << 3);
-
-    /* PPH_TYPE - TSH */
-    skb->data [itmh_offset] |= (0x2 << 1);
-
-    ftmh_ase_offset = itmh_offset + BKSYNC_DNXJR2_ITMH_HEADER_LEN;
-    /* ASE 1588 ext */
-    memset(&skb->data[ftmh_ase_offset], 0x0, BKSYNC_DNXJR2_FTMH_APP_SPECIFIC_EXT_LEN);
-
-    /* OTSH.encap_type = udp vs non-udp  - 1bit (15:15) */
-    /* encap type - 2 L2, 4 & 6 UDP */
-    skb->data[ftmh_ase_offset + 4] |= (((encap_type == 2) ? 1 : 0) << 7);
-
-    /* ASE1588 1588v2 command -  one step or two step  3bit (14:12) */
+    /* ASE1588 1588v2 command - one step (egress, tp_cmd=3) or two step (tp_cmd=2) - 3bit (14:12) */
     switch (hwts) {
         case HWTSTAMP_TX_ONESTEP_SYNC:
-            skb->data[ftmh_ase_offset + 4] |= ((0x1) << 4);
+            skb->data[ftmh_ase_offset + 4] |= ((0x3) << 4);
             break;
         default:
             skb->data[ftmh_ase_offset + 4] |= ((0x2) << 4);
@@ -2744,17 +2682,8 @@ static int bksync_ptp_hw_tstamp_tx_meta_get(int dev_no,
         if (debug & DBG_LVL_TX_DUMP) dbg_dump_pkt(skb->data, skb->len);
     } else if (DEVICE_IS_DNX && (hdrlen > (BKSYNC_DNX_PTCH_2_SIZE))) {
 
-        switch(transport)
-        {
-            case 6: /* UDP IPv6   */
-                bksync_dnx_ase1588_tsh_hdr_update_ipv6(dev_info, skb, hwts, transport, ptp_hdr_offset);
-                break;
-            case 4: /* UDP IPv4   */
-            case 2: /* IEEE 802.3 */
-            default:
-                bksync_dnx_ase1588_tsh_hdr_update(dev_info, skb, hwts, transport, ptp_hdr_offset);
-                break;
-        }
+        bksync_dnx_ase1588_tsh_hdr_update(dev_info, skb, hwts, transport, hdrlen, (ptp_hdr_offset - hdrlen));
+        DBG_TX(("hdrlen:%u ptp_hdr_offset:%u pkt_offset:%u\n", hdrlen, ptp_hdr_offset, pkt_offset));
     }
 
     DBG_TX(("hw_tstamp_tx_meta_get(dev_no:%d): ptptime: 0x%llx ptpcounter: 0x%llx\n", dev_no, ptptime, ptpcounter));
@@ -3296,7 +3225,6 @@ static int bksync_ntp_tod_get_cmd(bksync_dev_t *dev_info, fw_tstamp_t *tod_time)
 }
 #endif
 
-#ifndef BDE_EDK_SUPPORT
 static int bksync_evlog_cmd(int event, int enable)
 {
     int ret = -1;
@@ -3324,7 +3252,6 @@ static int bksync_evlog_cmd(int event, int enable)
 
     return ret;
 }
-#endif
 
 /*
  * Device Debug Statistics Proc Entry
@@ -3442,15 +3369,20 @@ static ssize_t
 bksync_proc_txts_write(struct file *file, const char *buf,
                       size_t count, loff_t *loff)
 {
-    char debug_str[40] = {0};
+    char debug_str[40];
     char *ptr;
     int port;
     int dev_no;
     bksync_dev_t *dev_info;
 
+    if (count >= sizeof(debug_str)) {
+        count = sizeof(debug_str) - 1;
+    }
+
     if (copy_from_user(debug_str, buf, count)) {
         return -EFAULT;
     }
+    debug_str[count] = '\0';
 
     if ((ptr = strstr(debug_str, "clear")) != NULL) {
 
@@ -3497,12 +3429,17 @@ static ssize_t
 bksync_proc_debug_write(struct file *file, const char *buf,
                       size_t count, loff_t *loff)
 {
-    char debug_str[40] = {0};
+    char debug_str[40];
     char *ptr;
+
+    if (count >= sizeof(debug_str)) {
+        count = sizeof(debug_str) - 1;
+    }
 
     if (copy_from_user(debug_str, buf, count)) {
         return -EFAULT;
     }
+    debug_str[count] = '\0';
 
     if ((ptr = strstr(debug_str, "debug=")) != NULL) {
         ptr += 6;
@@ -3591,7 +3528,7 @@ static int bksync_proc_dev_info_seq_show(struct seq_file *s, void *v)
         seq_printf(s, "  dev_no:          %d\n", dev_info->dev_no);
         seq_printf(s, "     dev_id:          0x%x\n", dev_info->dev_id);
         seq_printf(s, "     dev_init:        %d\n", dev_info->dev_init);
-        seq_printf(s, "     dev_core:        %d\n", dev_info->max_core);
+        seq_printf(s, "     dev_core:        %d\n", dev_info->nof_uc);
         seq_printf(s, "     phc_index:       /dev/ptp%d\n", bksync_ptp_hw_tstamp_ptp_clock_index_get(dev_info->dev_no));
     }
     return 0;
@@ -3634,15 +3571,15 @@ bksync_proc_init(void)
 {
     struct proc_dir_entry *entry;
 
-    PROC_CREATE(entry, "stats", 0666, bksync_proc_root, &bksync_proc_txts_file_ops);
+    PROC_CREATE(entry, "stats", 0644, bksync_proc_root, &bksync_proc_txts_file_ops);
     if (entry == NULL) {
         return -1;
     }
-    PROC_CREATE(entry, "debug", 0666, bksync_proc_root, &bksync_proc_debug_file_ops);
+    PROC_CREATE(entry, "debug", 0644, bksync_proc_root, &bksync_proc_debug_file_ops);
     if (entry == NULL) {
         return -1;
     }
-    PROC_CREATE(entry, "dev_info", 0666, bksync_proc_root, &bksync_proc_dev_info_file_ops);
+    PROC_CREATE(entry, "dev_info", 0644, bksync_proc_root, &bksync_proc_dev_info_file_ops);
     if (entry == NULL) {
         return -1;
     }
@@ -4301,59 +4238,59 @@ bksync_sysfs_cleanup(void)
 static void bksync_ptp_fw_data_alloc(int dev_no)
 {
     bksync_dev_t *dev_info = &ptp_priv->dev_info[dev_no];
-#ifndef BDE_EDK_SUPPORT
     dma_addr_t dma_mem = 0;
-#endif
 
     /* Initialize the Base address for CMIC and shared Memory access */
     dev_info->base_addr = lkbde_get_dev_virt(dev_no);
     dev_info->dma_dev = lkbde_get_dma_dev(dev_no);
 
-#ifndef BDE_EDK_SUPPORT
-    dev_info->evlog_dma_mem_size = sizeof(bksync_evlog_t); /*sizeof(bksync_evlog_t);*/
+    if (dev_info->comm_mem) {
+        /* Do nothing */
+    } else {
+        dev_info->evlog_dma_mem_size = sizeof(bksync_evlog_t); /*sizeof(bksync_evlog_t);*/
 
-    if (dev_info->evlog == NULL) {
-        DBG_ERR(("Allocate memory for event log\n"));
-        dev_info->evlog = DMA_ALLOC_COHERENT(dev_info->dma_dev,
-                                                   dev_info->evlog_dma_mem_size,
-                                                   &dma_mem);
+        if (dev_info->evlog == NULL) {
+            DBG_ERR(("Allocate memory for event log\n"));
+            dev_info->evlog = DMA_ALLOC_COHERENT(dev_info->dma_dev,
+                    dev_info->evlog_dma_mem_size,
+                    &dma_mem);
+            if (dev_info->evlog != NULL) {
+                dev_info->dma_mem = dma_mem;
+            }
+        }
+
         if (dev_info->evlog != NULL) {
-            dev_info->dma_mem = dma_mem;
+            /* Reset memory */
+            memset((void *)dev_info->evlog, 0, dev_info->evlog_dma_mem_size);
+
+            DBG_ERR(("Shared memory allocation (%d bytes) for event log successful at 0x%016lx.\n",
+                        dev_info->evlog_dma_mem_size, (long unsigned int)dev_info->dma_mem));
         }
-    }
 
-    if (dev_info->evlog != NULL) {
-        /* Reset memory */
-        memset((void *)dev_info->evlog, 0, dev_info->evlog_dma_mem_size);
+        /* Allocate dma for timestmap logging for extts */
+        dma_mem = 0;
+        dev_info->extts_dma_mem_size = sizeof(bksync_fw_extts_log_t);
+        if (dev_info->extts_log == NULL) {
+            DBG_ERR(("Allocate memory for extts log\n"));
+            dev_info->extts_log = DMA_ALLOC_COHERENT(dev_info->dma_dev,
+                    dev_info->extts_dma_mem_size,
+                    &dma_mem);
+            if (dev_info->extts_log != NULL) {
+                dev_info->extts_dma_mem_addr = dma_mem;
+            }
+        }
 
-        DBG_ERR(("Shared memory allocation (%d bytes) for event log successful at 0x%016lx.\n",
-                dev_info->evlog_dma_mem_size, (long unsigned int)dev_info->dma_mem));
-    }
-
-    /* Allocate dma for timestmap logging for extts */
-    dma_mem = 0;
-    dev_info->extts_dma_mem_size = sizeof(bksync_fw_extts_log_t);
-    if (dev_info->extts_log == NULL) {
-        DBG_ERR(("Allocate memory for extts log\n"));
-        dev_info->extts_log = DMA_ALLOC_COHERENT(dev_info->dma_dev,
-                                                   dev_info->extts_dma_mem_size,
-                                                   &dma_mem);
         if (dev_info->extts_log != NULL) {
-            dev_info->extts_dma_mem_addr = dma_mem;
+            /* Reset memory */
+            memset((void *)dev_info->extts_log, 0, dev_info->extts_dma_mem_size);
+            dev_info->extts_log->tail = 0;
+            dev_info->extts_event.head = -1;
+            dev_info->extts_log->head = -1;
+
+            DBG_ERR(("Shared memory allocation (%d bytes) for extts log successful at 0x%016lx.\n",
+                        dev_info->extts_dma_mem_size, (long unsigned int)dev_info->extts_dma_mem_addr));
         }
     }
-
-    if (dev_info->extts_log != NULL) {
-        /* Reset memory */
-        memset((void *)dev_info->extts_log, 0, dev_info->extts_dma_mem_size);
-        dev_info->extts_log->tail = 0;
-        dev_info->extts_event.head = -1;
-        dev_info->extts_log->head = -1;
-
-        DBG_ERR(("Shared memory allocation (%d bytes) for extts log successful at 0x%016lx.\n",
-                dev_info->extts_dma_mem_size, (long unsigned int)dev_info->extts_dma_mem_addr));
-    }
-#endif
     return;
 }
 
@@ -4362,29 +4299,39 @@ static void bksync_ptp_fw_data_free(void)
     int dev_no = 0;
     bksync_dev_t *dev_info = NULL;
 
-    for (dev_no = 0; dev_no < ptp_priv->max_dev; dev_no++) { 
+    for (dev_no = 0; dev_no < ptp_priv->max_dev; dev_no++) {
         dev_info = &ptp_priv->dev_info[dev_no];
 
         if (dev_info == NULL) {
             continue;
         }
 
-#ifdef BDE_EDK_SUPPORT
-        /* Do nothing */
-#else
-        if (dev_info->evlog != NULL) {
-            DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->evlog_dma_mem_size,
-                    (void *)dev_info->evlog, dev_info->dma_mem);
-            dev_info->evlog = NULL;
-        }
+        if (dev_info->comm_mem != NULL) {
+            DBG_ERR(("Free comm DMA mem: %d bytes\n", dev_info->comm_mem_size));
+            DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->comm_mem_size,
+                    (void *)dev_info->comm_mem, dev_info->comm_mem_paddr);
+            dev_info->comm_mem = NULL;
 
-        if (dev_info->extts_log != NULL) {
-            DBG_ERR(("Free shared memory : extts log of %d bytes\n", dev_info->extts_dma_mem_size));
-            DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->extts_dma_mem_size,
-                    (void *)dev_info->extts_log, dev_info->extts_dma_mem_addr);
-            dev_info->extts_log = NULL;
+            if (dev_info->extts_log != NULL) {
+                DBG_ERR(("Free extts DMA mem: %d bytes\n", dev_info->extts_dma_mem_size));
+                DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->extts_dma_mem_size,
+                        (void *)dev_info->extts_log, dev_info->extts_dma_mem_addr);
+                dev_info->extts_log = NULL;
+            }
+        } else {
+            if (dev_info->evlog != NULL) {
+                DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->evlog_dma_mem_size,
+                        (void *)dev_info->evlog, dev_info->dma_mem);
+                dev_info->evlog = NULL;
+            }
+
+            if (dev_info->extts_log != NULL) {
+                DBG_ERR(("Free shared memory : extts log of %d bytes\n", dev_info->extts_dma_mem_size));
+                DMA_FREE_COHERENT(dev_info->dma_dev, dev_info->extts_dma_mem_size,
+                        (void *)dev_info->extts_log, dev_info->extts_dma_mem_addr);
+                dev_info->extts_log = NULL;
+            }
         }
-#endif
     }
     return;
 }
@@ -4406,31 +4353,31 @@ static void bksync_ptp_dma_init(bksync_dev_t *dev_info, int dcb_type)
         endianess = 1;
 #endif
 
-#ifdef BDE_EDK_SUPPORT
-        /* Do nothing */
         (void)endianess;
-#else
-        DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_14r(CMIC_CMC_BASE), ((pci_cos << 16) | endianess));
 
-        DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE), 1);
-        DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE), 1);
-#endif
+        if (dev_info->comm_mem) {
+            /* Do nothing */
+        } else {
+            DEV_WRITE32(dev_info, FW_MESSAGE_REG_14r, ((pci_cos << 16) | endianess));
 
+            DEV_WRITE32(dev_info, FW_MESSAGE_REG_15r, 1);
+            DEV_WRITE32(dev_info, FW_MESSAGE_REG_16r, 1);
+        }
     bksync_ptp_fw_data_alloc(dev_info->dev_no);
 
     DBG_VERB(("%s %p dcb_type: %d\n", __FUNCTION__, dev_info->base_addr, dcb_type));
 
     ptp_priv->mirror_encap_bmp = 0x0;
 
-#ifdef BDE_EDK_SUPPORT
-    /* Do Nothing */
-#else
-    hostcmd_regs[0] = CMIC_CMC_SCHAN_MESSAGE_21r(CMIC_CMC_BASE);
-    hostcmd_regs[1] = CMIC_CMC_SCHAN_MESSAGE_20r(CMIC_CMC_BASE);
-    hostcmd_regs[2] = CMIC_CMC_SCHAN_MESSAGE_19r(CMIC_CMC_BASE);
-    hostcmd_regs[3] = CMIC_CMC_SCHAN_MESSAGE_18r(CMIC_CMC_BASE);
-    hostcmd_regs[4] = CMIC_CMC_SCHAN_MESSAGE_17r(CMIC_CMC_BASE);
-#endif
+    if (dev_info->comm_mem) {
+        /* Do nothing */
+    } else {
+        hostcmd_regs[0] = FW_MESSAGE_REG_21r;
+        hostcmd_regs[1] = FW_MESSAGE_REG_20r;
+        hostcmd_regs[2] = FW_MESSAGE_REG_19r;
+        hostcmd_regs[3] = FW_MESSAGE_REG_18r;
+        hostcmd_regs[4] = FW_MESSAGE_REG_17r;
+    }
 
     return;
 }
@@ -4451,10 +4398,7 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
     bksync_time_spec_t bs_offset;
     int tmp = 0;
 #ifdef BDE_EDK_SUPPORT
-    uint64_t paddr = 0;
     fw_tstamp_t tod_time;
-    int rv = 0;
-    sal_vaddr_t vaddr = 0;
 #endif
     int bs_id = -1;
     int gpio;
@@ -4464,7 +4408,9 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
     kmsg->hdr.type = KCOM_MSG_TYPE_RSP;
 
-    if (!dev_info->dev_init && kmsg->clock_info.cmd != KSYNC_M_HW_INIT) {
+    if (!dev_info->dev_init &&
+        kmsg->clock_info.cmd != KSYNC_M_HW_INIT &&
+        kmsg->clock_info.cmd != KSYNC_M_GET_COMM_MEM_PADDR) {
         kmsg->hdr.status = KCOM_E_NOT_FOUND;
         return sizeof(kcom_msg_hdr_t);
     }
@@ -4480,7 +4426,7 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
             pci_cos = kmsg->clock_info.data[0];
             fw_core = kmsg->clock_info.data[1];
             DBG_VERB(("Configuring pci_cosq:%d fw_core:%d\n", pci_cos, fw_core));
-            if (fw_core >= 0 || fw_core <= dev_info->max_core) {
+            if (fw_core >= 0 && (fw_core <= (dev_info->nof_uc * dev_info->nof_cores))) {
 
                 /* Return success if the app is already initialized. */
                 if (dev_info->dev_init) {
@@ -4488,32 +4434,24 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
                     return sizeof(kcom_msg_hdr_t);
                 }
 
-#ifdef BDE_EDK_SUPPORT
-                dev_info->fw_comm = NULL;
-                paddr = ((uint64_t)((uint32_t)kmsg->clock_info.data[7])) << 32;
-                paddr |= ((uint32_t)kmsg->clock_info.data[8]);
-                DBG_VERB((" HW_init: phy_addr:0x%llx \n", paddr));
-                rv = lkbde_get_phys_to_virt(dev_no, (phys_addr_t)paddr, &vaddr);
-                if ((rv != 0) || (vaddr == 0)) {
-                    DBG_ERR((" Address conversion failed. rv=%d\n", rv));
-                    kmsg->hdr.status = KCOM_E_RESOURCE;
-                    return sizeof(kcom_msg_hdr_t);
-                }
-                dev_info->fw_comm = (bksync_fw_comm_t *)vaddr;
-                DBG_VERB((" HW_init: virt_addr:%p:0x%llx\n", dev_info->fw_comm, (uint64_t)vaddr));
-#endif
                 dev_info->dcb_type = dcb_type;
+
+                /* Populate fw_comm_rpe_regs for use in bksync_ptp_dma_init.*/
+                (dev_info->init_data).fw_comm_rpe_regs= kmsg->clock_info.data[10];
+
                 bksync_ptp_dma_init(dev_info, dcb_type);
 
-#ifdef BDE_EDK_SUPPORT
-                /* Data from FW, hence don't memset fw_comm after address converstion */
-                fw_status = dev_info->fw_comm->cmd;
-#else
-                DEV_READ32(dev_info, CMIC_CMC_SCHAN_MESSAGE_21r(CMIC_CMC_BASE), &fw_status);
-#endif
+                if (dev_info->comm_mem) {
+                    /* Data from FW, hence don't memset comm_mem after address converstion */
+                    fw_status = dev_info->comm_mem->cmd;
+                } else {
+                    DEV_READ32(dev_info, hostcmd_regs[0], &fw_status);
+                }
+
                 /* Return error if the app is not ready yet. */
                 if (fw_status != 0xBADC0DE1) {
                     kmsg->hdr.status = KCOM_E_RESOURCE;
+                    DBG_ERR(("Firmware is not yet ready. fw_status:0x%x\n", fw_status));
                     return sizeof(kcom_msg_hdr_t);
                 }
 
@@ -4522,18 +4460,19 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
                 (dev_info->init_data).host_cpu_port = kmsg->clock_info.data[4];
                 (dev_info->init_data).host_cpu_sysport = kmsg->clock_info.data[5];
                 (dev_info->init_data).udh_len = kmsg->clock_info.data[6];
+                (dev_info->init_data).pph_udh_present = kmsg->clock_info.data[7];
                 (dev_info->init_data).application_v2 = kmsg->clock_info.data[9];
 
-                DBG_VERB(("fw_core:%d uc_port:%d uc_sysport:%d pci_port:%d pci_sysport:%d application_v2:%d\n",
+                DBG_VERB(("fw_core:%d uc_port:%d uc_sysport:%d pci_port:%d pci_sysport:%d application_v2:%d fw_comm_rpe_regs:%d\n",
                         kmsg->clock_info.data[1], kmsg->clock_info.data[2], kmsg->clock_info.data[3],
-                        kmsg->clock_info.data[4], kmsg->clock_info.data[5], kmsg->clock_info.data[9]));
+                            kmsg->clock_info.data[4], kmsg->clock_info.data[5], kmsg->clock_info.data[9], kmsg->clock_info.data[10]));
 
-                DBG_VERB(("uc_port:%d uc_sysport:%d pci_port:%d pci_sysport:%d application_v2:%d\n",
+                DBG_VERB(("uc_port:%d uc_sysport:%d pci_port:%d pci_sysport:%d application_v2:%d fw_comm_rpe_regs:%d\n",
                         (dev_info->init_data).uc_port_num,
                         (dev_info->init_data).uc_port_sysport,
                         (dev_info->init_data).host_cpu_port,
                         (dev_info->init_data).host_cpu_sysport,
-                        (dev_info->init_data).application_v2));
+                        (dev_info->init_data).application_v2, (dev_info->init_data).fw_comm_rpe_regs));
 
                 if (bksync_ptp_init(dev_info, &(dev_info->ptp_info)) >= 0) {
                     dev_info->dev_init = 1;
@@ -4548,10 +4487,12 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
             /* If module is not init then don't call DEINIT */
             if (dev_info->dev_init) {
-#ifndef BDE_EDK_SUPPORT
-                DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE), 0);
-                DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE), 0);
-#endif
+                if (dev_info->comm_mem) {
+                    /* Do nothing */
+                } else {
+                    DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE), 0);
+                    DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE), 0);
+                }
                 bksync_ptp_deinit(dev_info);
 
                 dev_info->dev_init = 0;
@@ -4591,31 +4532,14 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
             (dev_info->jr2_header_data).cosq_port_pp_port = header_data->cosq_port_pp_port;
 
             header_data = &(dev_info->jr2_header_data);
-
-#if 0
-            DBG_VERB(("ftmh_lb_key_ext_size %u ftmh_stacking_ext_size %u pph_base_size %u\n",
-                    header_data->ftmh_lb_key_ext_size, header_data->ftmh_stacking_ext_size,
-                    header_data->pph_base_size));
-
-            for (tmp = 0; tmp < BKSYNC_DNXJER2_PPH_LIF_EXT_TYPE_MAX ; tmp++) {
-                DBG_VERB(("pph_lif_ext_size[%u] %u\n",
-                        tmp, header_data->pph_lif_ext_size[tmp]));
-            }
-
-            DBG_VERB(("system_headers_mode %u udh_enable %u\n",
-                    header_data->system_headers_mode, header_data->udh_enable));
-
-            for (tmp = 0; tmp < BKSYNC_DNXJER2_UDH_DATA_TYPE_MAX; tmp++) {
-                DBG_VERB(("udh_data_lenght_per_type [%d] %u\n",
-                        tmp, header_data->udh_data_lenght_per_type[tmp]));
-            }
-
-            DBG_VERB(("cosq_port_cpu_channel :%u cosq_port_pp_port:%u\n",
-                    header_data->cosq_port_cpu_channel, header_data->cosq_port_cpu_channel));
-#endif
             break;
+
         case KSYNC_M_BS_CONFIG_SET:
             bs_id = kmsg->clock_info.data[0];
+            if (bs_id < 0 || bs_id >= (int)ARRAY_SIZE(dev_info->bksync_bs_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             dev_info->bksync_bs_info[bs_id].enable = 1;
             dev_info->bksync_bs_info[bs_id].mode = kmsg->clock_info.data[1];
@@ -4628,6 +4552,10 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
         case KSYNC_M_BS_CONFIG_CLEAR:
             bs_id = kmsg->clock_info.data[0];
+            if (bs_id < 0 || bs_id >= (int)ARRAY_SIZE(dev_info->bksync_bs_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             dev_info->bksync_bs_info[bs_id].enable = 0;
 
@@ -4636,6 +4564,10 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
         case KSYNC_M_BS_STATUS:
             bs_id = kmsg->clock_info.data[0];
+            if (bs_id < 0 || bs_id >= (int)ARRAY_SIZE(dev_info->bksync_bs_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             kmsg->hdr.type = KCOM_MSG_TYPE_RSP;
             (void)bksync_broadsync_status_cmd(dev_info, bs_id, &status);
@@ -4708,6 +4640,10 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
         case KSYNC_M_GPIO_CONFIG_SET:
             gpio = kmsg->clock_info.data[0];
+            if (gpio < 0 || gpio >= (int)ARRAY_SIZE(dev_info->bksync_gpio_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             dev_info->bksync_gpio_info[gpio].enable = (uint32_t)kmsg->clock_info.data[1];
             dev_info->bksync_gpio_info[gpio].mode = (uint32_t)kmsg->clock_info.data[2];
@@ -4724,6 +4660,10 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
         case KSYNC_M_GPIO_CONFIG_GET:
             dev_info = &ptp_priv->dev_info[dev_no];
             gpio = kmsg->clock_info.data[0];
+            if (gpio < 0 || gpio >= (int)ARRAY_SIZE(dev_info->bksync_gpio_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             kmsg->hdr.type = KCOM_MSG_TYPE_RSP;
             kmsg->clock_info.data[1] = (int32_t)dev_info->bksync_gpio_info[gpio].mode;
@@ -4733,14 +4673,36 @@ bksync_ioctl_cmd_handler(kcom_msg_clock_cmd_t *kmsg, int len, int dcb_type, int 
 
         case KSYNC_M_BS_PHASE_OFFSET_SET:
             bs_id = kmsg->clock_info.data[0];
+            if (bs_id < 0 || bs_id >= (int)ARRAY_SIZE(dev_info->bksync_bs_info)) {
+                kmsg->hdr.status = KCOM_E_PARAM;
+                return sizeof(kcom_msg_hdr_t);
+            }
 
             bs_offset.sign = kmsg->clock_info.data[1];
-            bs_offset.sec = (uint64_t)(((uint64_t)kmsg->clock_info.data[2] << 32) | 
+            bs_offset.sec = (uint64_t)(((uint64_t)kmsg->clock_info.data[2] << 32) |
                                                                 (uint32_t)kmsg->clock_info.data[3]);
             bs_offset.nsec = (uint32_t)kmsg->clock_info.data[4];
 
             (void)bksync_broadsync_phase_offset_cmd(dev_info, bs_id, bs_offset);
             break;
+
+#ifdef BDE_EDK_SUPPORT
+        case KSYNC_M_GET_COMM_MEM_PADDR:
+            /* Return driver-allocated DMA buffer physical addresses to HOST.
+             * data[0:1] = comm_mem phys addr (upper:lower 32b)
+             * data[2:3] = extts buffer phys addr (upper:lower 32b) */
+            dev_info = &ptp_priv->dev_info[dev_no];
+            if (dev_info->comm_mem == NULL || dev_info->extts_log == NULL) {
+                DBG_ERR(("Host comm buffers not allocated for dev_no:%d\n", dev_no));
+                kmsg->hdr.status = KCOM_E_RESOURCE;
+                return sizeof(kcom_msg_hdr_t);
+            }
+            kmsg->clock_info.data[0] = (int32_t)((u64)dev_info->comm_mem_paddr >> 32);
+            kmsg->clock_info.data[1] = (int32_t)((u64)dev_info->comm_mem_paddr & 0xFFFFFFFF);
+            kmsg->clock_info.data[2] = (int32_t)((u64)dev_info->extts_dma_mem_addr >> 32);
+            kmsg->clock_info.data[3] = (int32_t)((u64)dev_info->extts_dma_mem_addr & 0xFFFFFFFF);
+            break;
+#endif
 
         default:
             kmsg->hdr.status = KCOM_E_NOT_FOUND;
@@ -4766,15 +4728,19 @@ static int bksync_phc_create(int dev_no)
         return -ENODEV;
     }
 
+    /* Default, unless multidie */
+    dev_info->nof_cores = 1;
+
     switch(dev_info->dev_id) {
         case 0x8870:    /* Q3D */
+            dev_info->nof_cores = 2;
         case 0x8860:    /* JR3 */
         case 0x8890:    /* JRAI */
         case 0x8490:    /* Q3A */
-            dev_info->max_core = 6;
+            dev_info->nof_uc = 6;
             break;
         default:
-            dev_info->max_core = 2;
+            dev_info->nof_uc = 2;
             break;
     }
 
@@ -4790,6 +4756,41 @@ static int bksync_phc_create(int dev_no)
     /* Initialize the Base address for CMIC and shared Memory access */
     dev_info->base_addr = lkbde_get_dev_virt(dev_no);
     dev_info->dma_dev = lkbde_get_dma_dev(dev_no);
+
+#ifdef BDE_EDK_SUPPORT
+    /* Allocate DMA-coherent shared memory for comm.
+     * The virtual address is used by PHC; the physical address is passed to the FW */
+    dev_info->comm_mem_size = sizeof(bksync_fw_comm_t);
+    dev_info->comm_mem = DMA_ALLOC_COHERENT(dev_info->dma_dev,
+                                               dev_info->comm_mem_size,
+                                               &dev_info->comm_mem_paddr);
+    if (dev_info->comm_mem != NULL) {
+        memset((void *)dev_info->comm_mem, 0, dev_info->comm_mem_size);
+        DBG_VERB(("Comm DMA mem allocated: %d bytes, virt:%p phys:0x%llx\n",
+                 dev_info->comm_mem_size, dev_info->comm_mem,
+                 (u64)dev_info->comm_mem_paddr));
+    } else {
+        DBG_ERR(("Comm DMA mem allocation failed for dev_no:%d\n", dev_no));
+    }
+
+    dev_info->extts_dma_mem_size = sizeof(bksync_fw_extts_log_t);
+    dev_info->extts_log = DMA_ALLOC_COHERENT(dev_info->dma_dev,
+                                              dev_info->extts_dma_mem_size,
+                                              &dev_info->extts_dma_mem_addr);
+    if (dev_info->extts_log != NULL) {
+        /* Reset memory */
+        memset((void *)dev_info->extts_log, 0, dev_info->extts_dma_mem_size);
+        dev_info->extts_log->tail = 0;
+        dev_info->extts_event.head = -1;
+        dev_info->extts_log->head = -1;
+
+        DBG_VERB(("Extts DMA mem allocated: %d bytes, virt:%p phys:0x%llx\n",
+                 dev_info->extts_dma_mem_size, dev_info->extts_log,
+                 (u64)dev_info->extts_dma_mem_addr));
+    } else {
+        DBG_ERR(("Extts DMA mem allocation failed for dev_no:%d\n", dev_no));
+    }
+#endif
 
     bksync_ptp_info.n_ext_ts = no_ext_ts;
 
@@ -4938,11 +4939,11 @@ static int bksync_ptp_remove(void)
         dev_info = &ptp_priv->dev_info[dev_no];
 
         if (dev_info->dev_init) {
-#ifndef BDE_EDK_SUPPORT
-            /* reset handshaking info */
-            DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE), 0);
-            DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE), 0);
-#endif
+            if (dev_info->comm_mem == NULL) {
+                /* reset handshaking info */
+                DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_15r(CMIC_CMC_BASE), 0);
+                DEV_WRITE32(dev_info, CMIC_CMC_SCHAN_MESSAGE_16r(CMIC_CMC_BASE), 0);
+            }
             /* Deinitialize */
             bksync_ptp_deinit(dev_info);
 

@@ -28,71 +28,51 @@
 # 
 # 
 #
+# Generic Netlink Packet Interface
+#
 LOCALDIR = systems/linux/kernel/modules/genl-packet
 
 include ${SDK}/make/Make.config
 
-LIBS =
+export LKM_CPPFLAGS := -I${SDK}/systems/linux/kernel/modules/include/kernel
 
-CFLAGS += -I${SDK}/systems/linux/kernel/modules/include/kernel
+export MOD_NAME := genl-packet
 
-KERNEL_MODULE_DIR = kernel_module
-
-THIS_MOD_NAME := genl-packet
-MODULE = $(LIBDIR)/$(THIS_MOD_NAME).o
-KMODULE = $(LIBDIR)/$(THIS_MOD_NAME).ko
-
-# BCM Network Device
-
-ifeq (1,$(NO_PRECOMPILED_MODULE))
-# {
 #
-# These are the objects which need to be compiled, in the kernel, to
-# created the module object file.
+# For proper symbol support, the main source file name must differ
+# from the module name, so we change the hyphens to underscores before
+# we compile.
 #
-SRCS_COMPOSING = genl-packet.c
-OBJECTS_COMPOSING = genl-packet.o
-#
-# Note that for NO_PRECOMPILED_MODULE, the subdirectory  'systems/linux/kernel/modules/genl-packet/kernel_module'
-# is not created and all action is done in systems/linux/kernel/modules/genl-packet
-#
+export MOD_OBJS := \
+	genl_packet.o
+
+KMODULE = $(LIBDIR)/$(MOD_NAME).ko
 
 build: $(KMODULE)
 
-$(KMODULE): $(SRCS_COMPOSING)
-	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
+#
+# Suppress symlink error messages.
+#
+# Note that we do not use "ln -f" as this may cause failures if
+# multiple builds are done in parallel on the same source tree.
+#
+R = 2>/dev/null
+
+mklinks:
+	mkdir -p $(BLDDIR)
 	rm -f $(BLDDIR)/*.c
-	rm -f $(BLDDIR)/*.o
-	rm -f $(BLDDIR)/*.ko
-	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/Makefile
-	cp ./*.c $(BLDDIR)/
-	MOD_OBJS=$(OBJECTS_COMPOSING) MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR) $(THIS_MOD_NAME).ko LOC_BLDDIR=$(BLDDIR) LOC_SRCDIR=$(PWD)
-# }
-else
-# {
-build: $(MODULE) $(KMODULE)
-#
-# This is for the compilation of the 'precompiled' object. We keep it
-# here for compatibility.
-#
-$(MODULE): $(BLDDIR)/.tree $(BOBJS) $(LIBS)
-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
+	rm -f $(BLDDIR)/*.h
+	rm -f $(BLDDIR)/Makefile
+	-ln -sr ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/Makefile $(R)
+	-ln -sr genl-packet.c $(BLDDIR)/genl_packet.c $(R)
 
-$(KMODULE): $(MODULE)
-	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	mkdir $(BLDDIR)/$(KERNEL_MODULE_DIR)
-	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/$(KERNEL_MODULE_DIR)/Makefile
-	MOD_NAME=$(THIS_MOD_NAME) $(MAKE) -C $(BLDDIR)/$(KERNEL_MODULE_DIR) $(THIS_MOD_NAME).ko
-# }
-endif
-
-# Make.depend is before clean:: so that Make.depend's clean:: runs first.
-
-include ${SDK}/make/Make.depend
+$(KMODULE): mklinks
+	$(MAKE) -C $(BLDDIR) KBUILD_EXTRA_SYMBOLS="$(KBUILD_EXTRA_SYMBOLS)"
 
 clean::
-	$(RM) $(BLDDIR)/version.c $(BLDDIR)/version.o
-	$(RM) $(BOBJS) $(MODULE)
+	rm -f $(KMODULE)
+	rm -rf $(BLDDIR)
 
-.PHONY: build
+distclean::
 
+.PHONY: build mklinks $(KMODULE)

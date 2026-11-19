@@ -85,7 +85,7 @@ CFGFLAGS += -D$(OSTYPE)
 # No user sal for the linux kernel
 # NO_SAL_APPL=1
 
-STD_CFLAGS = $(KFLAGS) $(CFGFLAGS)
+STD_CFLAGS = $(CFGFLAGS)
 
 
 STD_CPPFLAGS = ${STD_CFLAGS}

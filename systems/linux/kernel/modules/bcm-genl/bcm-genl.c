@@ -170,13 +170,13 @@ bcmgenl_proc_init(void)
     bcmgenl_proc_root = proc_mkdir(BCMGENL_PROCFS_PATH, NULL);
 
     /* create procfs for getting netdev mapping */
-    PROC_CREATE(entry, "netif", 0666, bcmgenl_proc_root, &proc_netif_file_ops);
+    PROC_CREATE(entry, "netif", 0644, bcmgenl_proc_root, &proc_netif_file_ops);
     if (entry == NULL) {
         return -1;
     }
 
     /* create procfs for generic stats */
-    PROC_CREATE(entry, "dev", 0666, bcmgenl_proc_root, &proc_dev_file_ops);
+    PROC_CREATE(entry, "dev", 0644, bcmgenl_proc_root, &proc_dev_file_ops);
     if (entry == NULL) {
         return -1;
     }

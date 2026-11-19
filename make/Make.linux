@@ -67,7 +67,7 @@ endif
 build:
 	$(MAKE) $(CMD)
 
-DELIVER clean C_COMPILER CXX_COMPILER variable mod bcm user issu libopennsa:
+DELIVER clean cleanall C_COMPILER CXX_COMPILER variable mod bcm user issu libopennsa:
 	$(MAKE) $(CMD) $@
 
 clean_d: clean
@@ -75,5 +75,5 @@ clean_d: clean
 distclean:
 	$(MAKE) $(CMD) $@
         
-.PHONY: build clean distclean clean_d DELIVER variable mod bcm user issu
+.PHONY: build clean cleanall distclean clean_d DELIVER variable mod bcm user issu
 
